@@ -48,6 +48,9 @@ jobs:
       - name: Install repo deps
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared
+        run: pnpm --filter @kedaruma/revlm-shared run build
+
       - name: Build and pack client
         run: |
           pnpm --filter @kedaruma/revlm-client run build
