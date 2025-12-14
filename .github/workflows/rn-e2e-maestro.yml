@@ -188,7 +188,6 @@ jobs:
         run: |
           cd $SAMPLE_APP/android
           ./gradlew assembleDebug
-          adb install -r app/build/outputs/apk/debug/app-debug.apk
 
       - name: Install Maestro
         run: |
@@ -205,4 +204,13 @@ jobs:
           emulator-options: "-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -accel off"
           script: |
             adb install -r $SAMPLE_APP/android/app/build/outputs/apk/debug/app-debug.apk
+            adb shell input keyevent 82 || true
+            adb exec-out screencap -p > /tmp/emulator.png || true
             maestro test $SAMPLE_APP/e2e/flow.yaml
+
+      - name: Upload emulator screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-screenshot
+          path: /tmp/emulator.png
