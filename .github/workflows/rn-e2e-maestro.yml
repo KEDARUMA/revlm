@@ -49,14 +49,22 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build shared
-        run: pnpm --filter @kedaruma/revlm-shared run build
+        run: |
+          pnpm --filter @kedaruma/revlm-shared run build
+          cd packages/revlm-shared
+          npm pack --silent
+          mv kedaruma-revlm-shared-*.tgz /tmp/revlm-shared.tgz
 
       - name: Build and pack client
         run: |
           pnpm --filter @kedaruma/revlm-client run build
           cd packages/revlm-client
-          TARBALL=$(npm pack --silent)
-          mv "$TARBALL" /tmp/revlm-client.tgz
+          cp package.json /tmp/revlm-client-package.json.bak
+          node -e "const fs=require('fs');const pkg=require('./package.json');pkg.dependencies=pkg.dependencies||{};pkg.dependencies['@kedaruma/revlm-shared']='file:/tmp/revlm-shared.tgz';fs.writeFileSync('package.json',JSON.stringify(pkg,null,2));"
+          npm pack --silent --pack-destination /tmp
+          mv /tmp/kedaruma-revlm-client-*.tgz /tmp/revlm-client.tgz
+          tar -xOf /tmp/revlm-client.tgz package/package.json
+          mv /tmp/revlm-client-package.json.bak package.json
           echo "/tmp/revlm-client.tgz" > /tmp/revlm-client-tarball
           cat /tmp/revlm-client-tarball
 
@@ -174,7 +182,7 @@ jobs:
           CLIENT_TGZ=$(cat /tmp/revlm-client-tarball)
           if [ -z "$CLIENT_TGZ" ] || [ ! -f "$CLIENT_TGZ" ]; then echo "client tarball not found"; exit 1; fi
           npm install --legacy-peer-deps
-          npm install --legacy-peer-deps "$CLIENT_TGZ" react-native-webcrypto@0.1.2 react-native-get-random-values@1.11.0 fast-text-encoding buffer react-native-quick-crypto
+          npm install --legacy-peer-deps "$CLIENT_TGZ" /tmp/revlm-shared.tgz react-native-webcrypto@0.1.2 react-native-get-random-values@1.11.0 fast-text-encoding buffer react-native-quick-crypto
 
       - name: Build Android app
         run: |
