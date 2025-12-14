@@ -15,9 +15,15 @@ describe('rn-setup', () => {
   });
 
   it('sets globals when optional deps are available', () => {
-    jest.doMock('react-native-webcrypto', () => ({
-      crypto: { subtle: { importKey: jest.fn() }, getRandomValues: jest.fn() },
-    }), { virtual: true });
+    jest.doMock('@peculiar/webcrypto', () => {
+      class MockCrypto {
+        subtle = { importKey: jest.fn() };
+        getRandomValues = jest.fn();
+      }
+      class MockTextEncoder {}
+      class MockTextDecoder {}
+      return { Crypto: MockCrypto, TextEncoder: MockTextEncoder, TextDecoder: MockTextDecoder };
+    }, { virtual: true });
     jest.doMock('react-native-get-random-values', () => ({}), { virtual: true });
     jest.doMock('fast-text-encoding', () => ({
       TextEncoder: class MockTextEncoder {},
@@ -46,5 +52,22 @@ describe('rn-setup', () => {
         require('../rn-setup');
       });
     }).not.toThrow();
+  });
+
+  it('adds subtle when crypto exists but subtle is missing', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g: any = global;
+    g.crypto = { getRandomValues: jest.fn() }; // subtle absent
+    jest.doMock('@peculiar/webcrypto', () => {
+      class MockCrypto {
+        subtle = { importKey: jest.fn() };
+        getRandomValues = jest.fn();
+      }
+      return { Crypto: MockCrypto };
+    }, { virtual: true });
+    jest.isolateModules(() => {
+      require('../rn-setup');
+    });
+    expect(g.crypto.subtle).toBeDefined();
   });
 });

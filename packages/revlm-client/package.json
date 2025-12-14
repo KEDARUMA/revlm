@@ -51,6 +51,7 @@
     "test": "pnpm exec jest --config ../../jest.config.cjs packages/revlm-client/src/__tests__/ --runInBand --watchman=false --verbose"
   },
   "dependencies": {
+    "@peculiar/webcrypto": "^1.4.4",
     "@kedaruma/revlm-shared": "workspace:*",
     "bson": "^6.10.4",
     "dotenv": "^17.2.3"
