@@ -184,6 +184,10 @@ jobs:
           npm install --legacy-peer-deps
           npm install --legacy-peer-deps "$CLIENT_TGZ" /tmp/revlm-shared.tgz react-native-get-random-values@1.11.0 fast-text-encoding buffer react-native-quick-crypto
 
+      - name: Disable QuickCrypto Nitro (Android)
+        run: |
+          echo "quickcrypto.enableNitro=false" >> $SAMPLE_APP/android/gradle.properties
+
       - name: Build Android app
         run: |
           cd $SAMPLE_APP/android
