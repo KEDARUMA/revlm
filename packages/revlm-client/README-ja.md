@@ -25,6 +25,20 @@ const all = await coll.find({});
 
 ```
 
+### React Native（Hermes）でのポリフィル
+
+以下を依存に追加し、アプリのエントリ（`index.js` や `App.tsx` など）の先頭で一度だけ読み込みます。
+
+```bash
+pnpm add react-native-webcrypto react-native-get-random-values fast-text-encoding buffer
+```
+
+```ts
+import '@kedaruma/revlm-client/rn-setup';
+```
+
+`crypto`（getRandomValues/subtle）、`TextEncoder`/`TextDecoder`、`Buffer` をベストエフォートで埋めます。RN 以外の環境で読み込んでも安全です。
+
 ## スクリプト
 
 - `pnpm run build` – `tsup` でビルドします。

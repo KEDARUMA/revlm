@@ -24,6 +24,20 @@ const coll = db.collection<any>('collection_name');
 const all = await coll.find({});
 ```
 
+### React Native (Hermes) polyfills
+
+Install RN-friendly crypto/text/Buffer polyfills and load the helper once at app startup (e.g. in `index.js` or `App.tsx`):
+
+```bash
+pnpm add react-native-webcrypto react-native-get-random-values fast-text-encoding buffer
+```
+
+```ts
+import '@kedaruma/revlm-client/rn-setup';
+```
+
+The helper makes a best-effort attempt to wire `crypto`, `crypto.getRandomValues`, `crypto.subtle`, `TextEncoder`/`TextDecoder`, and `Buffer`. It is safe to import on non-RN platforms.
+
 ## Scripts
 
 - `pnpm run build` – bundle with `tsup`
