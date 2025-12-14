@@ -96,6 +96,9 @@ jobs:
 
       - name: Install Android SDK components
         run: |
+          echo "🧹 Cleaning old Android images to free space..."
+          rm -rf $ANDROID_HOME/system-images || true
+          rm -rf ~/.android/avd || true
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-33" "build-tools;34.0.0" "system-images;android-33;google_apis;x86_64" "emulator"
 
@@ -105,6 +108,8 @@ jobs:
           ls -R $ANDROID_HOME/system-images || true
           echo "🧰 Installed build-tools:"
           ls $ANDROID_HOME/build-tools || true
+          echo "💾 Disk usage:"
+          df -h /
 
       - name: Generate minimal RN app
         run: |
@@ -243,11 +248,13 @@ jobs:
       - name: Run Maestro flow on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 33
+          api-level: 30
           target: google_apis
           arch: x86_64
           force-avd-creation: true
-          emulator-options: "-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -accel off"
+          emulator-boot-timeout: 600000
+          disk-size: 2000M
+          emulator-options: "-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -accel off -partition-size 1024 -no-metrics"
           script: |
             echo "🚀 Waiting for emulator device..."
             adb -s "$ANDROID_SERIAL" wait-for-device
