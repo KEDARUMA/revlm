@@ -1,0 +1,192 @@
+name: rn-e2e-maestro
+
+on:
+  workflow_dispatch:
+    inputs:
+      node_version:
+        description: Node.js version
+        required: false
+        default: '18.20.5'
+      rn_version:
+        description: React Native version
+        required: false
+        default: '0.74.3'
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
+      NODE_VERSION: ${{ inputs.node_version || '18.20.5' }}
+      RN_VERSION: ${{ inputs.rn_version || '0.74.3' }}
+      SAMPLE_APP: rn-sample
+      REVLM_PORT: 3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install repo deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and pack client
+        run: |
+          pnpm --filter @kedaruma/revlm-client run build
+          pnpm --filter @kedaruma/revlm-client pack
+
+      - name: Build server
+        run: pnpm --filter @kedaruma/revlm-server run build
+
+      - name: Start MongoMemory-backed Revlm server
+        run: node scripts/start-revlm-memory-server.js &
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-33" "build-tools;34.0.0" "system-images;android-33;google_apis;x86_64" "emulator"
+
+      - name: Create and start emulator
+        run: |
+          echo "no" | avdmanager create avd -n ci-android33 -k "system-images;android-33;google_apis;x86_64" --device "pixel_5"
+          $ANDROID_HOME/emulator/emulator -avd ci-android33 -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -accel off -netdelay none -netspeed full &
+          adb wait-for-device
+          adb shell input keyevent 82
+
+      - name: Generate minimal RN app
+        run: |
+          npx react-native@${RN_VERSION} init $SAMPLE_APP --version ${RN_VERSION} --skip-install
+          cd $SAMPLE_APP
+          cat > metro.config.js <<'EOF'
+          const { getDefaultConfig } = require('@react-native/metro-config');
+          const config = getDefaultConfig(__dirname);
+          config.resolver.unstable_enablePackageExports = true;
+          module.exports = config;
+          EOF
+          cat > App.js <<'EOF'
+          import React, { useState } from 'react';
+          import { SafeAreaView, Text, TextInput, Button, ScrollView, StyleSheet, Platform } from 'react-native';
+          import '@kedaruma/revlm-client/rn-setup';
+          import { Revlm } from '@kedaruma/revlm-client';
+
+          const baseUrl = Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+          const provisionalAuthSecretMaster = 'ci-provisional-secret';
+          const provisionalAuthDomain = 'ci.revlm.dev';
+
+          export default function App() {
+            const [log, setLog] = useState('');
+            const [status, setStatus] = useState('idle');
+            const [result, setResult] = useState('');
+            const [error, setError] = useState('');
+
+            const run = async () => {
+              setStatus('running');
+              setLog('starting');
+              setError('');
+              setResult('');
+              try {
+                const revlm = new Revlm(baseUrl, {
+                  provisionalEnabled: true,
+                  provisionalAuthSecretMaster,
+                  provisionalAuthDomain,
+                  autoSetToken: true,
+                });
+                const authId = `ci-user-${Date.now()}`;
+                const password = 'secret123!';
+
+                setLog((l) => l + '\nprovisional');
+                await revlm.provisionalLogin(authId);
+
+                setLog((l) => l + '\nregister');
+                await revlm.registerUser({ authId, userType: 'user', roles: [] }, password);
+
+                setLog((l) => l + '\nlogin');
+                await revlm.login(authId, password);
+
+                setLog((l) => l + '\nfind');
+                const coll = revlm.db('revlm-e2e').collection('demo');
+                const findRes = await coll.find({});
+                setResult(JSON.stringify(findRes));
+                setStatus('success');
+                setLog((l) => l + '\ndone');
+              } catch (err) {
+                setStatus('error');
+                setError(String(err));
+              }
+            };
+
+            return (
+              <SafeAreaView style={styles.container}>
+                <ScrollView>
+                  <Text testID="status">status:{status}</Text>
+                  <Button title="Run flow" testID="run-button" onPress={run} />
+                  <Text selectable testID="log">{log}</Text>
+                  <Text selectable testID="result">{result}</Text>
+                  {error ? <Text selectable testID="error">{error}</Text> : null}
+                </ScrollView>
+              </SafeAreaView>
+            );
+          }
+
+          const styles = StyleSheet.create({
+            container: {
+              flex: 1,
+              padding: 16,
+              gap: 8,
+            },
+          });
+          EOF
+          mkdir -p e2e
+          cat > e2e/flow.yaml <<'EOF'
+          appId: com.rnsample
+          ---
+          - launchApp
+          - tapOn:
+              id: "run-button"
+          - assertVisible:
+              id: "status"
+              text: "status:success"
+          - assertVisible:
+              id: "result"
+          EOF
+
+      - name: Install RN app deps
+        run: |
+          cd $SAMPLE_APP
+          CLIENT_TGZ=$(ls ../packages/revlm-client/kedaruma-revlm-client-*.tgz | head -n 1)
+          npm install
+          npm install "$CLIENT_TGZ" react-native-webcrypto react-native-get-random-values fast-text-encoding buffer react-native-quick-crypto
+
+      - name: Build Android app
+        run: |
+          cd $SAMPLE_APP/android
+          ./gradlew assembleDebug
+          adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> $GITHUB_PATH
+
+      - name: Run Maestro flow
+        run: |
+          cd $SAMPLE_APP
+          maestro test e2e/flow.yaml --device "emulator-5554"
