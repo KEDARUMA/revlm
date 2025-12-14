@@ -55,6 +55,7 @@ jobs:
         run: |
           pnpm --filter @kedaruma/revlm-client run build
           pnpm --filter @kedaruma/revlm-client pack
+          find packages/revlm-client -name "kedaruma-revlm-client-*.tgz" -print > /tmp/revlm-client-tarball
 
       - name: Build server
         run: pnpm --filter @kedaruma/revlm-server run build
@@ -167,8 +168,8 @@ jobs:
       - name: Install RN app deps
         run: |
           cd $SAMPLE_APP
-          CLIENT_TGZ=$(find ../packages/revlm-client -name "kedaruma-revlm-client-*.tgz" | head -n 1)
-          if [ -z "$CLIENT_TGZ" ]; then echo "client tarball not found"; exit 1; fi
+          CLIENT_TGZ=$(cat /tmp/revlm-client-tarball)
+          if [ -z "$CLIENT_TGZ" ] || [ ! -f "$CLIENT_TGZ" ]; then echo "client tarball not found"; exit 1; fi
           npm install --legacy-peer-deps
           npm install --legacy-peer-deps "$CLIENT_TGZ" react-native-webcrypto@0.1.2 react-native-get-random-values@1.11.0 fast-text-encoding buffer react-native-quick-crypto
 
