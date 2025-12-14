@@ -54,8 +54,10 @@ jobs:
       - name: Build and pack client
         run: |
           pnpm --filter @kedaruma/revlm-client run build
-          pnpm --filter @kedaruma/revlm-client pack
-          find . -maxdepth 3 -name "kedaruma-revlm-client-*.tgz" -print > /tmp/revlm-client-tarball
+          cd packages/revlm-client
+          TARBALL=$(npm pack --silent)
+          mv "$TARBALL" /tmp/revlm-client.tgz
+          echo "/tmp/revlm-client.tgz" > /tmp/revlm-client-tarball
           cat /tmp/revlm-client-tarball
 
       - name: Build server
