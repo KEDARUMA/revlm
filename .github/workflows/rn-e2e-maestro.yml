@@ -20,7 +20,7 @@ jobs:
       JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
       NODE_VERSION: ${{ inputs.node_version || '18.20.5' }}
       RN_VERSION: ${{ inputs.rn_version || '0.74.3' }}
-      SAMPLE_APP: rn-sample
+      SAMPLE_APP: rnsample
       REVLM_PORT: 3000
     steps:
       - name: Checkout
