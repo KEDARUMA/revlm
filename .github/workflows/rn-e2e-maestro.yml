@@ -203,9 +203,10 @@ jobs:
           force-avd-creation: true
           emulator-options: "-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -accel off"
           script: |
-            adb install -r $SAMPLE_APP/android/app/build/outputs/apk/debug/app-debug.apk
-            adb shell input keyevent 82 || true
-            adb exec-out screencap -p > /tmp/emulator.png || true
+            adb -s "$ANDROID_SERIAL" wait-for-device
+            adb -s "$ANDROID_SERIAL" install -r $SAMPLE_APP/android/app/build/outputs/apk/debug/app-debug.apk
+            adb -s "$ANDROID_SERIAL" shell input keyevent 82 || true
+            adb -s "$ANDROID_SERIAL" exec-out screencap -p > /tmp/emulator.png || true
             maestro test $SAMPLE_APP/e2e/flow.yaml
 
       - name: Upload emulator screenshot
