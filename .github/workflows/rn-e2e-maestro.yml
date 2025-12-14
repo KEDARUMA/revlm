@@ -67,13 +67,6 @@ jobs:
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-33" "build-tools;34.0.0" "system-images;android-33;google_apis;x86_64" "emulator"
 
-      - name: Create and start emulator
-        run: |
-          echo "no" | avdmanager create avd -n ci-android33 -k "system-images;android-33;google_apis;x86_64"
-          $ANDROID_HOME/emulator/emulator -avd ci-android33 -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -accel off -netdelay none -netspeed full &
-          adb wait-for-device
-          adb shell input keyevent 82
-
       - name: Generate minimal RN app
         run: |
           npx react-native@${RN_VERSION} init $SAMPLE_APP --version ${RN_VERSION} --skip-install
@@ -189,7 +182,14 @@ jobs:
           curl -Ls "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> $GITHUB_PATH
 
-      - name: Run Maestro flow
-        run: |
-          cd $SAMPLE_APP
-          maestro test e2e/flow.yaml --device "emulator-5554"
+      - name: Run Maestro flow on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: true
+          emulator-options: "-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -accel off"
+          script: |
+            adb install -r $SAMPLE_APP/android/app/build/outputs/apk/debug/app-debug.apk
+            maestro test $SAMPLE_APP/e2e/flow.yaml
