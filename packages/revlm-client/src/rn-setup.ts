@@ -8,11 +8,10 @@ const safeRequire = (id: string): any => {
   }
 };
 
-// Ensure crypto.getRandomValues and crypto.subtle are available if provided by react-native-webcrypto.
-const webcrypto = safeRequire('react-native-webcrypto');
-const cryptoFromWebcrypto = webcrypto?.crypto;
-if (cryptoFromWebcrypto && !(global as any).crypto) {
-  (global as any).crypto = cryptoFromWebcrypto;
+// Prefer existing crypto; if missing, try react-native-quick-crypto.
+if (!(global as any).crypto) {
+  const quickCrypto = safeRequire('react-native-quick-crypto');
+  if (quickCrypto) (global as any).crypto = quickCrypto;
 }
 
 // Polyfill random values for libraries like bson.

@@ -15,8 +15,8 @@ describe('rn-setup', () => {
   });
 
   it('sets globals when optional deps are available', () => {
-    jest.doMock('react-native-webcrypto', () => ({
-      crypto: { subtle: { importKey: jest.fn() }, getRandomValues: jest.fn() },
+    jest.doMock('react-native-quick-crypto', () => ({
+      randomBytes: jest.fn(),
     }), { virtual: true });
     jest.doMock('react-native-get-random-values', () => ({}), { virtual: true });
     jest.doMock('fast-text-encoding', () => ({
@@ -34,7 +34,6 @@ describe('rn-setup', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const g: any = global;
     expect(g.crypto).toBeDefined();
-    expect(g.crypto.subtle).toBeDefined();
     expect(g.TextEncoder?.name).toBe('MockTextEncoder');
     expect(g.TextDecoder?.name).toBe('MockTextDecoder');
     expect(g.Buffer?.name).toBe('MockBuffer');
