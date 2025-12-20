@@ -414,6 +414,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
         const ok = body && typeof body === 'object' ? (body as any).ok : undefined;
         const reason = body && typeof body === 'object' ? ((body as any).reason || (body as any).error) : undefined;
         const code = body && typeof body === 'object' ? (body as any).code : undefined;
+        const detail = body && typeof body === 'object' ? (body as any).detail : undefined;
         console.log('requestLog', {
           method: req.method,
           path: req.originalUrl || req.url,
@@ -421,6 +422,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
           ok,
           reason,
           code,
+          detail,
           durationMs: Date.now() - started,
         });
       });
@@ -432,10 +434,15 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
     app.post('/provisional-login', async (req: Request, res: Response) => {
       const { authId, password } = req.body;
       if (!authId || !password) return sendResponse(req, res, { ok: false, error: 'authId and password are required' }, 400);
+      const authFailed = { ok: false, error: 'Authentication failed', code: ERROR_CODES.authFailed };
       try {
-        if (authId !== PROVISIONAL_AUTH_ID) return sendResponse(req, res, { ok: false, error: 'Authentication failed' }, 401);
+        if (authId !== PROVISIONAL_AUTH_ID) {
+          return sendResponse(req, res, { ...authFailed, detail: 'provisional authId mismatch' }, 401);
+        }
         const passwordValid = await plpaServer!.validatePassword(password);
-        if (!passwordValid || !passwordValid.ok) return sendResponse(req, res, { ok: false, error: 'Authentication failed' }, 401);
+        if (!passwordValid || !passwordValid.ok) {
+          return sendResponse(req, res, { ...authFailed, detail: 'provisional password invalid' }, 401);
+        }
 
         const token = jwt.sign({ userType: 'provisional' }, JWT_SECRET as string, { expiresIn: '5s' });
         try {
@@ -447,7 +454,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
         return sendResponse(req, res, { ok: true, token, user: {} });
       } catch (err: any) {
         const statusCode = err.statusCode || 500;
-        return sendResponse(req, res, { ok: false, error: err.message }, statusCode);
+        return sendResponse(req, res, { ok: false, error: err.message, code: err.code ?? ERROR_CODES.authFailed, detail: err.stack }, statusCode);
       }
     });
   } else {

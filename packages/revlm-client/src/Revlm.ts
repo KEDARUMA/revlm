@@ -1,11 +1,10 @@
 import { EJSON } from 'bson';
 import { AuthClient } from '@kedaruma/revlm-shared';
-import type { User as UserDoc } from '@kedaruma/revlm-shared/models/user-types';
 import RevlmDBDatabase from "./RevlmDBDatabase";
-import { LoginResponse, ProvisionalLoginResponse } from './Revlm.types';
+import { LoginResponse, ProvisionalLoginResponse, RegisterUserResponse, User } from './Revlm.types';
 
 type EmailPasswordCredential = { type: 'emailPassword'; email: string; password: string };
-type UserInput = Omit<UserDoc, 'userType'> & { userType: UserDoc['userType'] | string };
+type UserInput = Omit<User, 'userType'> & { userType: User['userType'] | string };
 
 export type RevlmOptions = {
   fetchImpl?: typeof fetch;
@@ -207,10 +206,11 @@ export default class Revlm {
     return res as ProvisionalLoginResponse;
   }
 
-  async registerUser(user: UserInput, password: string) {
+  async registerUser(user: UserInput, password: string): Promise<RegisterUserResponse> {
     if (!user) throw new Error('user is required');
     if (!password) throw new Error('password is required');
-    return this.request('/registerUser', 'POST', { user, password });
+    const res = await this.request('/registerUser', 'POST', { user, password });
+    return res as RegisterUserResponse;
   }
 
   async deleteUser(params: { _id?: any; authId?: string }) {
@@ -248,14 +248,14 @@ class Credentials {
   }
 }
 
-class User {
+class RevlmUser {
   private _app: App;
   private _token: string;
-  private _profile: any;
+  private _profile: User;
   functions: {
     callFunction: (_name: string, _args?: any[]) => Promise<any>;
   };
-  constructor(app: App, token: string, profile: any) {
+  constructor(app: App, token: string, profile: User) {
     this._app = app;
     this._token = token;
     this._profile = profile || {};
@@ -271,11 +271,11 @@ class User {
   get accessToken(): string {
     return this._token;
   }
-  get profile(): any {
+  get profile(): User {
     return this._profile;
   }
   mongoClient(_serviceName = 'mongodb-atlas'): MongoDBService {
-    return new MongoDBService(this._app.__revlm);
+    return new MongoDBService(this._app.revlm);
   }
   async logOut() {
     await this._app.logOut();
@@ -283,40 +283,39 @@ class User {
 }
 
 class App {
-  private _currentUser: User | null = null;
-  private _users: Record<string, User> = {};
-  // Expose for internal use by emulated classes
-  __revlm: Revlm;
+  private _currentUser: RevlmUser | null = null;
+  private _users: Record<string, RevlmUser> = {};
+  revlm: Revlm;
   emailPasswordAuth: {
     registerUser: (email: string, password: string) => Promise<RevlmResponse>;
     deleteUser: (email: string) => Promise<RevlmResponse>;
   };
 
   constructor(baseUrl: string, opts: RevlmOptions & { id?: string } = {}) {
-    this.__revlm = new Revlm(baseUrl, opts);
+    this.revlm = new Revlm(baseUrl, opts);
     this.emailPasswordAuth = {
       registerUser: async (email: string, password: string) => {
-        return this.__revlm.registerUser({ authId: email, userType: 'user', roles: ['user'] }, password);
+        return this.revlm.registerUser({ authId: email, userType: 'user', roles: ['user'] }, password);
       },
       deleteUser: async (email: string) => {
-        return this.__revlm.deleteUser({ authId: email });
+        return this.revlm.deleteUser({ authId: email });
       },
     };
   }
 
-  get currentUser(): User | null {
+  get currentUser(): RevlmUser | null {
     return this._currentUser;
   }
 
-  get allUsers(): Record<string, User> {
+  get allUsers(): Record<string, RevlmUser> {
     return { ...this._users };
   }
 
-  async logIn(cred: EmailPasswordCredential): Promise<User> {
+  async logIn(cred: EmailPasswordCredential): Promise<RevlmUser> {
     if (!cred || cred.type !== 'emailPassword') {
       throw new Error('Unsupported credentials type');
     }
-    const res = await this.__revlm.login(cred.email, cred.password);
+    const res = await this.revlm.login(cred.email, cred.password);
     console.log('### App:login res:', res)
     if (!res || !res.ok || !res.token) {
       const errMsg = res && !res.ok ? res.error : 'login failed';
@@ -330,22 +329,22 @@ class App {
       }
       throw err;
     }
-    this.__revlm.setToken(res.token as string);
-    const user = new User(this, res.token as string, res.user);
+    this.revlm.setToken(res.token as string);
+    const user = new RevlmUser(this, res.token as string, res.user);
     const userId = user.id || 'current';
     this._users[userId] = user;
     this._currentUser = user;
     return user;
   }
 
-  switchUser(user: User): User {
+  switchUser(user: RevlmUser): RevlmUser {
     if (!user) throw new Error('user is required');
     this._currentUser = user;
-    this.__revlm.setToken(user.accessToken);
+    this.revlm.setToken(user.accessToken);
     return user;
   }
 
-  async removeUser(user: User): Promise<void> {
+  async removeUser(user: RevlmUser): Promise<void> {
     if (!user) return;
     const id = user.id || 'current';
     delete this._users[id];
@@ -355,17 +354,17 @@ class App {
   }
 
   async logOut(): Promise<void> {
-    this.__revlm.logout();
+    this.revlm.logout();
     this._currentUser = null;
   }
 
   // Realm compatibility: allow deleteUser(user) pattern
-  async deleteUser(user: User): Promise<void> {
+  async deleteUser(user: RevlmUser): Promise<void> {
     if (!user) return;
     const authId = (user.profile && (user.profile as any).authId) || user.id;
-    await this.__revlm.deleteUser({ authId });
+    await this.revlm.deleteUser({ authId });
     await this.removeUser(user);
   }
 }
 
-export { App, Credentials, MongoDBService, User };
+export { App, Credentials, MongoDBService, RevlmUser };

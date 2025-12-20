@@ -1,5 +1,10 @@
 import {Long, Timestamp} from "bson";
-import type {User} from "@kedaruma/revlm-shared/models/user-types";
+import type { User as SharedUser, UserBase as SharedUserBase } from "@kedaruma/revlm-shared/models/user-types";
+
+type ReadonlyExcept<T, K extends keyof T> = Readonly<Omit<T, K>> & Pick<T, K>;
+
+export type UserBase = ReadonlyExcept<SharedUserBase, "userType" | "roles">;
+export type User = ReadonlyExcept<SharedUser, "userType" | "roles">;
 
 export type RevlmErrorResponse = { ok: false; error: string; code?: number; status?: number; reason?: string };
 export type LoginSuccess = { ok: true; token: string; user: User };

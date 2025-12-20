@@ -19,3 +19,5 @@ export interface UserBase extends MongoDocBase {
 }
 
 export interface User extends UserBase {}
+
+// Public shape for client consumption (sensitive fields removed).
