@@ -1,5 +1,6 @@
 import { EJSON } from 'bson';
 import { AuthClient } from '@kedaruma/revlm-shared';
+import type { DefaultId } from '@kedaruma/revlm-shared/models/mongo-doc-base-types';
 import RevlmDBDatabase from "./RevlmDBDatabase";
 import { LoginResponse, ProvisionalLoginResponse, RegisterUserResponse, User } from './Revlm.types';
 
@@ -115,11 +116,8 @@ export default class Revlm {
     try {
       return EJSON.parse(text);
     } catch (e) {
-    }
-    try {
-      return JSON.parse(text);
-    } catch (e) {
-      return text;
+      const preview = text.length > 200 ? `${text.slice(0, 200)}...` : text;
+      throw new Error(`Invalid EJSON response: ${preview}`);
     }
   }
 
@@ -265,8 +263,8 @@ class RevlmUser {
       },
     };
   }
-  get id(): string {
-    return String(this._profile && this._profile._id ? this._profile._id : '');
+  get id(): DefaultId {
+    return this._profile && this._profile._id ? this._profile._id : '';
   }
   get accessToken(): string {
     return this._token;
@@ -303,6 +301,10 @@ class App {
     };
   }
 
+  private getUserKey(user: RevlmUser): string {
+    return user && user.id ? String(user.id) : 'current';
+  }
+
   get currentUser(): RevlmUser | null {
     return this._currentUser;
   }
@@ -331,8 +333,8 @@ class App {
     }
     this.revlm.setToken(res.token as string);
     const user = new RevlmUser(this, res.token as string, res.user);
-    const userId = user.id || 'current';
-    this._users[userId] = user;
+    const userKey = this.getUserKey(user);
+    this._users[userKey] = user;
     this._currentUser = user;
     return user;
   }
@@ -346,8 +348,8 @@ class App {
 
   async removeUser(user: RevlmUser): Promise<void> {
     if (!user) return;
-    const id = user.id || 'current';
-    delete this._users[id];
+    const userKey = this.getUserKey(user);
+    delete this._users[userKey];
     if (this._currentUser === user) {
       await this.logOut();
     }

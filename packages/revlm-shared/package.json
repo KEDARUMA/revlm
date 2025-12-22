@@ -1,34 +1,40 @@
 {
   "name": "@kedaruma/revlm-shared",
-  "version": "1.0.7",
+  "version": "1.0.9",
   "private": false,
   "description": "Shared TypeScript types, auth helpers, and utilities for the Revlm client/server packages.",
   "type": "module",
   "main": "dist/index.js",
+  "react-native": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "react-native": "./dist/index.js",
       "import": "./dist/index.js",
       "require": "./dist/index.js"
     },
     "./auth-token": {
       "types": "./dist/auth-token.d.ts",
+      "react-native": "./dist/auth-token.js",
       "import": "./dist/auth-token.js",
       "require": "./dist/auth-token.js"
     },
     "./models/user-types": {
       "types": "./dist/models/user-types.d.ts",
+      "react-native": "./dist/models/user-types.js",
       "import": "./dist/models/user-types.js",
       "require": "./dist/models/user-types.js"
     },
     "./utils/asserts": {
       "types": "./dist/utils/asserts.d.ts",
+      "react-native": "./dist/utils/asserts.js",
       "import": "./dist/utils/asserts.js",
       "require": "./dist/utils/asserts.js"
     },
     "./models/*": {
       "types": "./dist/models/*.d.ts",
+      "react-native": "./dist/models/*.js",
       "import": "./dist/models/*.js",
       "require": "./dist/models/*.js"
     }

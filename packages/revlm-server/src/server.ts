@@ -78,8 +78,7 @@ function getClient(): MongoClientType {
 
 function sendResponse(req: any, res: any, obj: any, status = 200) {
   if (status) res.status(status);
-  const acceptHeader = (req.headers && (req.headers['accept'] || req.headers['Accept'])) || '';
-  const explicitlyWantsEjson = typeof acceptHeader === 'string' && acceptHeader.includes('application/ejson');
+  const explicitlyWantsEjson = true;
   (res as any).locals = (res as any).locals || {};
   (res as any).locals.revlmResponse = { status: status || res.statusCode, body: obj };
   if (explicitlyWantsEjson) {
