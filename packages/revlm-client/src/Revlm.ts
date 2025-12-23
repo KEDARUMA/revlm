@@ -18,8 +18,6 @@ export type RevlmOptions = {
   autoSetToken?: boolean;
   // automatically refresh on 401 once and retry the original request
   autoRefreshOn401?: boolean;
-  // throw when refresh fails due to missing refresh cookie
-  strictRefreshCookie?: boolean;
 };
 
 export type RevlmResponse<T = any> = {
@@ -41,7 +39,7 @@ export default class Revlm {
   private provisionalAuthDomain: string;
   private autoSetToken: boolean;
   private autoRefreshOn401: boolean;
-  private strictRefreshCookie: boolean;
+  private cookieCheckPromise?: Promise<void>;
 
   constructor(baseUrl: string, opts: RevlmOptions = {}) {
     if (!baseUrl) throw new Error('baseUrl is required');
@@ -53,7 +51,6 @@ export default class Revlm {
     this.provisionalAuthDomain = opts.provisionalAuthDomain || '';
     this.autoSetToken = opts.autoSetToken ?? true;
     this.autoRefreshOn401 = opts.autoRefreshOn401 || false;
-    this.strictRefreshCookie = opts.strictRefreshCookie || false;
 
     if (!this.fetchImpl) {
       throw new Error('No fetch implementation available. Provide fetchImpl in options or run in Node 18+ with global fetch.');
@@ -134,6 +131,11 @@ export default class Revlm {
     return pathname.includes('/login') || pathname.includes('/provisional-login') || pathname.includes('/refresh-token') || pathname.includes('/verify-token');
   }
 
+  private shouldSkipCookieCheck(path: string): boolean {
+    const pathname = path.startsWith('http') ? new URL(path).pathname : path;
+    return pathname.includes('/cookie-check');
+  }
+
   private async signIfNeeded(
     _url: string,
     _method: string,
@@ -152,6 +154,9 @@ export default class Revlm {
     opts: { allowAuthRetry: boolean; retrying: boolean } = { allowAuthRetry: false, retrying: false }
   ): Promise<RevlmResponse> {
     const { allowAuthRetry, retrying } = opts;
+    if (!this.shouldSkipCookieCheck(path)) {
+      await this.ensureCookieSupport();
+    }
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
     const hasBody = body !== undefined;
     const headers = this.makeHeaders(hasBody);
@@ -175,8 +180,17 @@ export default class Revlm {
       }
       if (allowAuthRetry && !retrying && res.status === 401 && !this.shouldSkipAuthRetry(path)) {
         const refreshRes = await this.refreshToken();
-        if (this.strictRefreshCookie && !refreshRes.ok && (refreshRes as any).reason === 'no_refresh_secret') {
-          throw new Error('Refresh cookie missing. Provide a cookie-aware fetch implementation for Node/RN.');
+        if (!refreshRes.ok) {
+          console.warn('### refresh failed:', {
+            reason: (refreshRes as any).reason,
+            status: refreshRes.status,
+            error: refreshRes.error,
+          });
+          if ((refreshRes as any).reason === 'no_refresh_secret') {
+            const missingError = new Error('Refresh cookie missing. Provide a cookie-aware fetch implementation for Node/RN.');
+            (missingError as any).revlmReason = 'no_refresh_secret';
+            throw missingError;
+          }
         }
         if (refreshRes && refreshRes.ok && refreshRes.token) {
           return this.requestWithRetry(path, method, body, { allowAuthRetry: false, retrying: true });
@@ -184,6 +198,9 @@ export default class Revlm {
       }
       return out;
     } catch (err: any) {
+      if (err && (err as any).revlmReason === 'no_refresh_secret') {
+        throw err;
+      }
       return { ok: false, error: err?.message || String(err) };
     }
   }
@@ -201,6 +218,7 @@ export default class Revlm {
     if (!this.provisionalEnabled) {
       throw new Error('provisional login is disabled by client configuration');
     }
+    await this.ensureCookieSupport();
     if (!authId) throw new Error('authId is required');
     const provisionalClient = new AuthClient({ secretMaster: this.provisionalAuthSecretMaster, authDomain: this.provisionalAuthDomain });
     const provisionalPassword = await provisionalClient.producePassword(String(Date.now() * 1000));
@@ -230,6 +248,22 @@ export default class Revlm {
 
   db(dbName: string) {
     return new RevlmDBDatabase(dbName, this);
+  }
+
+  private async ensureCookieSupport(): Promise<void> {
+    if (this.cookieCheckPromise) return this.cookieCheckPromise;
+    this.cookieCheckPromise = (async () => {
+      const first = await this.requestWithRetry('/cookie-check', 'POST', undefined, { allowAuthRetry: false, retrying: false });
+      if (first.ok) return;
+      if ((first as any).reason !== 'cookie_missing') {
+        throw new Error(`Cookie check failed: ${(first as any).reason || first.error || 'unknown_error'}`);
+      }
+      const second = await this.requestWithRetry('/cookie-check', 'POST', undefined, { allowAuthRetry: false, retrying: false });
+      if (!second.ok) {
+        throw new Error('Cookie support missing. Provide a cookie-aware fetch implementation for Node/RN.');
+      }
+    })();
+    return this.cookieCheckPromise;
   }
 }
 

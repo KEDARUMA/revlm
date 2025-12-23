@@ -114,6 +114,8 @@ function shouldLog(level: LogLevel): boolean {
 
 const REFRESH_SECRET_TTL_SEC = 300;
 const REFRESH_COOKIE_NAME = 'revlm_refresh';
+const COOKIE_CHECK_TTL_SEC = 120;
+const COOKIE_CHECK_NAME = 'revlm_cookie_check';
 const ERROR_CODES = {
   authFailed: 4349,
   tokenExpired: 40101,
@@ -156,6 +158,18 @@ function setRefreshCookie(res: Response, signed: string) {
     sameSite: 'lax',
     path: '/refresh-token',
     maxAge: REFRESH_SECRET_TTL_SEC * 1000,
+  });
+}
+
+function setCookieCheck(res: Response, value: string) {
+  // Short-lived HttpOnly cookie for /cookie-check verification.
+  const secure = process.env.NODE_ENV !== 'test';
+  (res as any).cookie(COOKIE_CHECK_NAME, value, {
+    httpOnly: true,
+    secure,
+    sameSite: 'lax',
+    path: '/cookie-check',
+    maxAge: COOKIE_CHECK_TTL_SEC * 1000,
   });
 }
 
@@ -230,6 +244,18 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
     const reason = (result as any).reason;
     if (reason === 'token_expired') return sendResponse(req, res, { ok: false, reason: 'token_expired', code: ERROR_CODES.tokenExpired }, 401);
     return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
+  });
+
+// Endpoint: cookie support check
+  app.post('/cookie-check', (req: Request, res: Response) => {
+    const cookies = parseCookies(req);
+    const existing = cookies[COOKIE_CHECK_NAME];
+    if (existing) {
+      return sendResponse(req, res, { ok: true }, 200);
+    }
+    const nonce = crypto.randomBytes(16).toString('base64url');
+    setCookieCheck(res, nonce);
+    return sendResponse(req, res, { ok: false, reason: 'cookie_missing' }, 428);
   });
 
 // Endpoint: refresh an expired token within grace window

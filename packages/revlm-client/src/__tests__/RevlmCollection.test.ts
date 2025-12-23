@@ -27,6 +27,24 @@ jest.setTimeout(120000);
 const TEST_DB = 'testdb';
 const COLL_NAME = 'testcoll';
 
+function createFetchWithCookies(baseFetch: typeof fetch) {
+  const cookieJar = { value: '' };
+  return async (input: any, init: RequestInit = {}) => {
+    const isRequest = typeof Request !== 'undefined' && input instanceof Request;
+    const baseHeaders = isRequest ? input.headers : undefined;
+    const headers = new Headers(init.headers || baseHeaders || {});
+    if (cookieJar.value) headers.set('cookie', cookieJar.value);
+    const request = isRequest
+      ? new Request(input, { headers })
+      : new Request(input, { ...init, headers });
+    const res = await baseFetch(request);
+    const setCookie = (res.headers as any).getSetCookie?.() ?? res.headers.get('set-cookie');
+    const cookieValue = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    if (cookieValue) cookieJar.value = cookieValue.split(';')[0];
+    return res;
+  };
+}
+
 describe('RevlmCollection (integration)', () => {
   let v: Revlm;
   let provisionalToken: string | undefined;
@@ -53,6 +71,7 @@ describe('RevlmCollection (integration)', () => {
       provisionalEnabled: true,
       provisionalAuthSecretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER as string,
       provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
+      fetchImpl: createFetchWithCookies(fetch),
     });
     // Perform provisional login to obtain token for test setup
     // 仮ログインを実行してテストセットアップ用のトークンを取得

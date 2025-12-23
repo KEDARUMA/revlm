@@ -24,6 +24,24 @@ let testEnv: SetupTestEnvironmentResult;
 
 jest.setTimeout(20000);
 
+function createFetchWithCookies(baseFetch: typeof fetch) {
+  const cookieJar = { value: '' };
+  return async (input: any, init: RequestInit = {}) => {
+    const isRequest = typeof Request !== 'undefined' && input instanceof Request;
+    const baseHeaders = isRequest ? input.headers : undefined;
+    const headers = new Headers(init.headers || baseHeaders || {});
+    if (cookieJar.value) headers.set('cookie', cookieJar.value);
+    const request = isRequest
+      ? new Request(input, { headers })
+      : new Request(input, { ...init, headers });
+    const res = await baseFetch(request);
+    const setCookie = (res.headers as any).getSetCookie?.() ?? res.headers.get('set-cookie');
+    const cookieValue = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    if (cookieValue) cookieJar.value = cookieValue.split(';')[0];
+    return res;
+  };
+}
+
 // provisionalLogin の結合テスト
 describe('Revlm.provisionalLogin (integration)', () => {
   // Shared client and provisional token for tests
@@ -49,14 +67,13 @@ describe('Revlm.provisionalLogin (integration)', () => {
     });
 
     // create client and perform provisional login once for reuse
-    v = new Revlm(testEnv.serverUrl,
-      {
-        provisionalEnabled: true,
-        provisionalAuthSecretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER as string,
-        provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
-        autoRefreshOn401: process.env.AUTO_REFRESH_ON_401 === 'true'
-      }
-    );
+    v = new Revlm(testEnv.serverUrl, {
+      provisionalEnabled: true,
+      provisionalAuthSecretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER as string,
+      provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
+      autoRefreshOn401: process.env.AUTO_REFRESH_ON_401 === 'true',
+      fetchImpl: createFetchWithCookies(fetch),
+    });
     const res = await v.provisionalLogin(process.env.PROVISIONAL_AUTH_ID as string);
     if (!res.ok || !res.token) throw new Error('Failed to obtain provisional token in beforeAll: ' + JSON.stringify(res));
     provisionalToken = res.token as string;

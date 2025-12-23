@@ -29,6 +29,24 @@ let testEnv: SetupTestEnvironmentResult;
 
 jest.setTimeout(20000);
 
+function createFetchWithCookies(baseFetch: typeof fetch) {
+  const cookieJar = { value: '' };
+  return async (input: any, init: RequestInit = {}) => {
+    const isRequest = typeof Request !== 'undefined' && input instanceof Request;
+    const baseHeaders = isRequest ? input.headers : undefined;
+    const headers = new Headers(init.headers || baseHeaders || {});
+    if (cookieJar.value) headers.set('cookie', cookieJar.value);
+    const request = isRequest
+      ? new Request(input, { headers })
+      : new Request(input, { ...init, headers });
+    const res = await baseFetch(request);
+    const setCookie = (res.headers as any).getSetCookie?.() ?? res.headers.get('set-cookie');
+    const cookieValue = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    if (cookieValue) cookieJar.value = cookieValue.split(';')[0];
+    return res;
+  };
+}
+
 // provisionalLogin の結合テスト
 describe('Revlm.provisionalLogin (integration)', () => {
   // Shared client and provisional token for tests
@@ -58,7 +76,8 @@ describe('Revlm.provisionalLogin (integration)', () => {
       {
         provisionalEnabled: true,
         provisionalAuthSecretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER as string,
-        provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string
+        provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
+        fetchImpl: createFetchWithCookies(fetch),
       }
     );
     const res = await revlm.provisionalLogin(process.env.PROVISIONAL_AUTH_ID as string);
@@ -81,7 +100,7 @@ describe('Revlm.provisionalLogin (integration)', () => {
   });
 
   it('emulates Realm.App login/currentUser/allUsers and MongoDB service', async () => {
-    const app = new App(testEnv.serverUrl);
+    const app = new App(testEnv.serverUrl, { fetchImpl: createFetchWithCookies(fetch) });
     const creds = Credentials.emailPassword(TEST_USER_ID, TEST_USER_PASSWORD);
     const user = await app.logIn(creds);
 
