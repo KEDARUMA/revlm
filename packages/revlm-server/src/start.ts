@@ -33,7 +33,7 @@ async function main() {
     refreshWindowSec: toNumber(getEnvOrUndefined('REFRESH_WINDOW_SEC')),
     port: toNumber(getEnvOrUndefined('PORT')),
     refreshSecretSigningKey: getEnvOrUndefined('REFRESH_SECRET_SIGNING_KEY'),
-    debugRequestLog: toBool(getEnvOrUndefined('DEBUG_REQUEST_LOG')),
+    logLevel: getEnvOrUndefined('DEBUG_REQUEST_LOG'),
   };
 
   // Remove undefined entries so optional properties are omitted (satisfies exactOptionalPropertyTypes)

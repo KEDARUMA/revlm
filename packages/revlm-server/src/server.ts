@@ -39,14 +39,14 @@ export interface ServerConfig {
   refreshWindowSec?: number;
   port: number;
   refreshSecretSigningKey: string;
-  debugRequestLog?: boolean;
+  logLevel?: string;
 }
 
 const serverConfigDefaults: Partial<ServerConfig> = {
   provisionalLoginEnabled: false,
   jwtExpiresIn: '1h',
   refreshWindowSec: 300,
-  debugRequestLog: false,
+  logLevel: 'info',
 };
 
 let serverConfig: ServerConfig | undefined;
@@ -54,7 +54,16 @@ let plpaServer: AuthServer | undefined;
 let JWT_SECRET: string | undefined;
 let JWT_EXPIRES_IN: string | undefined;
 let REFRESH_WINDOW_SEC: number | undefined;
-let DEBUG_REQUEST_LOG: boolean | undefined;
+type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+const LOG_LEVEL_RANK: Record<LogLevel, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+};
+
+let LOG_LEVEL: LogLevel = 'info';
 let PROVISIONAL_LOGIN_ENABLED: boolean | undefined;
 let PROVISIONAL_AUTH_ID: string | undefined;
 let PROVISIONAL_AUTH_SECRET_MASTER: string | undefined;
@@ -86,6 +95,21 @@ function sendResponse(req: any, res: any, obj: any, status = 200) {
   } else {
     res.json(obj);
   }
+}
+
+function normalizeLogLevel(value?: string): LogLevel {
+  if (!value) return 'info';
+  const lowered = value.toLowerCase();
+  if (lowered === 'true' || lowered === '1') return 'debug';
+  if (lowered === 'false' || lowered === '0') return 'error';
+  if (lowered === 'error' || lowered === 'warn' || lowered === 'info' || lowered === 'debug') {
+    return lowered as LogLevel;
+  }
+  return 'info';
+}
+
+function shouldLog(level: LogLevel): boolean {
+  return LOG_LEVEL_RANK[level] <= LOG_LEVEL_RANK[LOG_LEVEL];
 }
 
 const REFRESH_SECRET_TTL_SEC = 300;
@@ -366,7 +390,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
   JWT_EXPIRES_IN = merged.jwtExpiresIn!
   REFRESH_WINDOW_SEC = merged.refreshWindowSec!;
   REFRESH_SECRET_SIGNING_KEY = merged.refreshSecretSigningKey;
-  DEBUG_REQUEST_LOG = !!merged.debugRequestLog;
+  LOG_LEVEL = normalizeLogLevel(merged.logLevel);
 
   if (PROVISIONAL_LOGIN_ENABLED) {
     plpaServer = new AuthServer({ secretMaster: PROVISIONAL_AUTH_SECRET_MASTER as string, authDomain: PROVISIONAL_AUTH_DOMAIN as string });
@@ -404,7 +428,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
     next();
   });
 
-  if (DEBUG_REQUEST_LOG) {
+  if (shouldLog('info')) {
     app.use((req: any, res: any, next: any) => {
       const started = Date.now();
       res.on('finish', () => {
@@ -517,6 +541,26 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
 
       const col = _db.collection(collection);
       if (!col) return sendResponse(req, res, { ok: false, error: 'Invalid collection parameter' }, 400);
+
+      if (shouldLog('debug')) {
+        const filterKeys = filter && typeof filter === 'object' ? Object.keys(filter) : undefined;
+        const updateKeys = update && typeof update === 'object' ? Object.keys(update) : undefined;
+        const documentKeys = document && typeof document === 'object' ? Object.keys(document) : undefined;
+        const optionsKeys = options && typeof options === 'object' ? Object.keys(options) : undefined;
+        const pipelineStages = Array.isArray(pipeline) ? pipeline.length : undefined;
+        const documentsCount = Array.isArray(documents) ? documents.length : undefined;
+        console.log('revlmGateDebug', {
+          db,
+          collection,
+          method,
+          filterKeys,
+          updateKeys,
+          documentKeys,
+          optionsKeys,
+          pipelineStages,
+          documentsCount,
+        });
+      }
 
       let result;
       switch (method) {
