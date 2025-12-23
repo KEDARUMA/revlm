@@ -10,6 +10,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import http, { Server } from 'http';
 import {AuthClient} from "@kedaruma/revlm-shared/auth-token";
 import request from "supertest";
+import { EJSON } from 'bson';
 
 export interface ServerConfigEnv extends Omit<ServerConfig, 'mongoUri'> {
   mongoUri?: string | null;
@@ -132,10 +133,11 @@ export async function createTestUser(options: CreateTestUserOptions): Promise<vo
       .post('/provisional-login')
       .send({ authId: provisionalAuthId, password: provisionalPassword });
 
-    if (!provisionalLoginRes.body || !provisionalLoginRes.body.ok) {
-      throw new Error('provisional-login failed: ' + JSON.stringify(provisionalLoginRes.body));
+    const provisionalLoginBody = parseEjsonBody(provisionalLoginRes);
+    if (!provisionalLoginBody || !provisionalLoginBody.ok) {
+      throw new Error('provisional-login failed: ' + JSON.stringify(provisionalLoginBody));
     }
-    const provisionalToken = provisionalLoginRes.body.token as string;
+    const provisionalToken = provisionalLoginBody.token as string;
 
     // Register the test user
     // テストユーザを登録
@@ -144,14 +146,25 @@ export async function createTestUser(options: CreateTestUserOptions): Promise<vo
       .set('X-Revlm-JWT', `Bearer ${provisionalToken}`)
       .send({ user, password });
 
-    if (!regRes.body || !regRes.body.ok) {
-      throw new Error('registerUser via API failed: ' + JSON.stringify(regRes.body));
+    const regBody = parseEjsonBody(regRes);
+    if (!regBody || !regBody.ok) {
+      throw new Error('registerUser via API failed: ' + JSON.stringify(regBody));
     }
 
     console.log(`Test user registered via API: ${user.authId}`);
   } catch (error) {
     console.error(`Failed to register test user (${user.authId}):`, error);
     throw error;
+  }
+}
+
+function parseEjsonBody(res: request.Response): any {
+  if (res.body && Object.keys(res.body).length > 0) return res.body;
+  if (!res.text) return res.body;
+  try {
+    return EJSON.parse(res.text);
+  } catch (_e) {
+    return res.body;
   }
 }
 

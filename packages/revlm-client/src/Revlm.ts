@@ -18,6 +18,8 @@ export type RevlmOptions = {
   autoSetToken?: boolean;
   // automatically refresh on 401 once and retry the original request
   autoRefreshOn401?: boolean;
+  // throw when refresh fails due to missing refresh cookie
+  strictRefreshCookie?: boolean;
 };
 
 export type RevlmResponse<T = any> = {
@@ -39,6 +41,7 @@ export default class Revlm {
   private provisionalAuthDomain: string;
   private autoSetToken: boolean;
   private autoRefreshOn401: boolean;
+  private strictRefreshCookie: boolean;
 
   constructor(baseUrl: string, opts: RevlmOptions = {}) {
     if (!baseUrl) throw new Error('baseUrl is required');
@@ -50,6 +53,7 @@ export default class Revlm {
     this.provisionalAuthDomain = opts.provisionalAuthDomain || '';
     this.autoSetToken = opts.autoSetToken ?? true;
     this.autoRefreshOn401 = opts.autoRefreshOn401 || false;
+    this.strictRefreshCookie = opts.strictRefreshCookie || false;
 
     if (!this.fetchImpl) {
       throw new Error('No fetch implementation available. Provide fetchImpl in options or run in Node 18+ with global fetch.');
@@ -171,6 +175,9 @@ export default class Revlm {
       }
       if (allowAuthRetry && !retrying && res.status === 401 && !this.shouldSkipAuthRetry(path)) {
         const refreshRes = await this.refreshToken();
+        if (this.strictRefreshCookie && !refreshRes.ok && (refreshRes as any).reason === 'no_refresh_secret') {
+          throw new Error('Refresh cookie missing. Provide a cookie-aware fetch implementation for Node/RN.');
+        }
         if (refreshRes && refreshRes.ok && refreshRes.token) {
           return this.requestWithRetry(path, method, body, { allowAuthRetry: false, retrying: true });
         }

@@ -84,7 +84,9 @@ describe('RevlmCollection (integration)', () => {
     const userDoc = { authId: newAuthId, userType: 'user', roles: [] };
 
     const regRes = await v.registerUser(userDoc, newPassword);
-    expect(regRes.ok).toBe(true);
+    if (!regRes.ok) {
+      throw new Error('registerUser failed: ' + JSON.stringify(regRes));
+    }
     expect(regRes.user).toBeDefined();
     expect(regRes.user.authId).toBe(newAuthId);
 
