@@ -20,7 +20,7 @@ async function main() {
   process.env.PROVISIONAL_AUTH_DOMAIN = 'ci.revlm.dev';
   process.env.REFRESH_WINDOW_SEC = '0';
   process.env.PORT = process.env.PORT || '3000';
-  process.env.DEBUG_REQUEST_LOG = process.env.DEBUG_REQUEST_LOG || 'false';
+process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 
   // Require compiled server entry
   const serverPath = path.join(__dirname, '..', 'packages', 'revlm-server', 'dist', 'start.js');

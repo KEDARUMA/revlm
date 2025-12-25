@@ -7,6 +7,41 @@ import { LoginResponse, ProvisionalLoginResponse, RegisterUserResponse, User } f
 type EmailPasswordCredential = { type: 'emailPassword'; email: string; password: string };
 type UserInput = Omit<User, 'userType'> & { userType: User['userType'] | string };
 
+type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+const LOG_LEVEL_RANK: Record<LogLevel, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+};
+
+function normalizeLogLevel(value?: string): LogLevel {
+  if (!value) return 'info';
+  const lowered = value.toLowerCase();
+  if (lowered === 'true' || lowered === '1') return 'debug';
+  if (lowered === 'false' || lowered === '0') return 'error';
+  if (lowered === 'error' || lowered === 'warn' || lowered === 'info' || lowered === 'debug') {
+    return lowered as LogLevel;
+  }
+  return 'info';
+}
+
+function maskSecret(value?: string): string | undefined {
+  if (!value) return undefined;
+  return `<...:${value.length}>`;
+}
+
+function getRevlmClientVersion(): string {
+  try {
+    const pkg = require('../package.json');
+    if (pkg && typeof pkg.version === 'string') return pkg.version;
+  } catch {
+    // ignore: bundle/runtime may not expose package.json
+  }
+  const globalVersion = (globalThis as any)?.REVLM_CLIENT_VERSION;
+  return typeof globalVersion === 'string' ? globalVersion : 'unknown';
+}
+
 export type RevlmOptions = {
   fetchImpl?: typeof fetch;
   defaultHeaders?: Record<string, string>;
@@ -18,6 +53,8 @@ export type RevlmOptions = {
   autoSetToken?: boolean;
   // automatically refresh on 401 once and retry the original request
   autoRefreshOn401?: boolean;
+  // log level for init log output: 'error' | 'warn' | 'info' | 'debug'
+  logLevel?: LogLevel;
 };
 
 export type RevlmResponse<T = any> = {
@@ -40,6 +77,8 @@ export default class Revlm {
   private autoSetToken: boolean;
   private autoRefreshOn401: boolean;
   private cookieCheckPromise?: Promise<void>;
+  private logLevel: LogLevel;
+  private refreshPromise: Promise<RevlmResponse> | undefined;
 
   constructor(baseUrl: string, opts: RevlmOptions = {}) {
     if (!baseUrl) throw new Error('baseUrl is required');
@@ -51,10 +90,44 @@ export default class Revlm {
     this.provisionalAuthDomain = opts.provisionalAuthDomain || '';
     this.autoSetToken = opts.autoSetToken ?? true;
     this.autoRefreshOn401 = opts.autoRefreshOn401 || false;
+    this.logLevel = normalizeLogLevel(opts.logLevel);
 
     if (!this.fetchImpl) {
       throw new Error('No fetch implementation available. Provide fetchImpl in options or run in Node 18+ with global fetch.');
     }
+
+    this.logInfo('🚀 Revlm Client Init', {
+      version: getRevlmClientVersion(),
+      baseUrl: this.baseUrl,
+      autoSetToken: this.autoSetToken,
+      autoRefreshOn401: this.autoRefreshOn401,
+      provisionalEnabled: this.provisionalEnabled,
+      provisionalAuthDomain: this.provisionalAuthDomain || undefined,
+      provisionalAuthSecretMaster: maskSecret(this.provisionalAuthSecretMaster),
+      defaultHeaders: Object.keys(this.defaultHeaders || {}),
+      fetchImplProvided: !!opts.fetchImpl,
+      logLevel: this.logLevel,
+    });
+  }
+
+  private canLog(level: LogLevel): boolean {
+    return LOG_LEVEL_RANK[this.logLevel] >= LOG_LEVEL_RANK[level];
+  }
+
+  logError(...args: any[]) {
+    if (this.canLog('error')) console.error(...args);
+  }
+
+  logWarn(...args: any[]) {
+    if (this.canLog('warn')) console.warn(...args);
+  }
+
+  logInfo(...args: any[]) {
+    if (this.canLog('info')) console.log(...args);
+  }
+
+  logDebug(...args: any[]) {
+    if (this.canLog('debug')) console.log(...args);
   }
 
   setToken(token: string) {
@@ -81,6 +154,19 @@ export default class Revlm {
       this.setToken(res.token as string);
     }
     return res;
+  }
+
+  private async refreshTokenSingleFlight(): Promise<RevlmResponse> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = (async () => {
+        try {
+          return await this.refreshToken();
+        } finally {
+          this.refreshPromise = undefined;
+        }
+      })();
+    }
+    return this.refreshPromise;
   }
 
   // Verify current token with server. If invalid/expired, clear local token.
@@ -136,6 +222,45 @@ export default class Revlm {
     return pathname.includes('/cookie-check');
   }
 
+  private decodeJwtPayload(token: string): { exp?: number; iat?: number } | null {
+    if (!token) return null;
+    const parts = token.split('.');
+    const payloadPart = parts[1];
+    if (!payloadPart) return null;
+    const raw = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = raw.length % 4 ? '='.repeat(4 - (raw.length % 4)) : '';
+    const base64 = raw + pad;
+    let jsonText: string | null = null;
+    if (typeof atob === 'function') {
+      jsonText = atob(base64);
+    } else if (typeof Buffer !== 'undefined') {
+      jsonText = Buffer.from(base64, 'base64').toString('utf8');
+    }
+    if (!jsonText) return null;
+    try {
+      const payload = JSON.parse(jsonText);
+      return { exp: payload?.exp, iat: payload?.iat };
+    } catch {
+      return null;
+    }
+  }
+
+  private logTokenTtl(event: string, path: string, tokenOverride?: string) {
+    const token = tokenOverride || this._token;
+    if (!token) return;
+    const payload = this.decodeJwtPayload(token);
+    if (!payload || typeof payload.exp !== 'number') return;
+    const now = Math.floor(Date.now() / 1000);
+    const ttlSec = payload.exp - now;
+    this.logDebug('### token ttl', {
+      event,
+      path,
+      ttlSec,
+      exp: payload.exp,
+      iat: payload.iat,
+    });
+  }
+
   private async signIfNeeded(
     _url: string,
     _method: string,
@@ -179,9 +304,13 @@ export default class Revlm {
         out.error = (parsed as any)?.reason || (parsed as any)?.message || 'Unknown error';
       }
       if (allowAuthRetry && !retrying && res.status === 401 && !this.shouldSkipAuthRetry(path)) {
-        const refreshRes = await this.refreshToken();
+        const beforePayload = this.decodeJwtPayload(this._token || '');
+        const refreshRes = await this.refreshTokenSingleFlight();
         if (!refreshRes.ok) {
-          console.warn('### refresh failed:', {
+          if ((refreshRes as any).reason === 'not_expired') {
+            return this.requestWithRetry(path, method, body, { allowAuthRetry: false, retrying: true });
+          }
+          this.logDebug('### refresh failed:', {
             reason: (refreshRes as any).reason,
             status: refreshRes.status,
             error: refreshRes.error,
@@ -193,8 +322,22 @@ export default class Revlm {
           }
         }
         if (refreshRes && refreshRes.ok && refreshRes.token) {
+          const afterPayload = this.decodeJwtPayload(refreshRes.token as string);
+          const now = Math.floor(Date.now() / 1000);
+          const oldExp = beforePayload?.exp;
+          const newExp = afterPayload?.exp;
+          this.logDebug('### refresh success', {
+            path,
+            oldExp,
+            newExp,
+            oldTtlSec: typeof oldExp === 'number' ? oldExp - now : undefined,
+            newTtlSec: typeof newExp === 'number' ? newExp - now : undefined,
+          });
           return this.requestWithRetry(path, method, body, { allowAuthRetry: false, retrying: true });
         }
+      }
+      if (out.ok && !this.shouldSkipCookieCheck(path)) {
+        this.logTokenTtl('request_ok', path);
       }
       return out;
     } catch (err: any) {
@@ -254,11 +397,13 @@ export default class Revlm {
     if (this.cookieCheckPromise) return this.cookieCheckPromise;
     this.cookieCheckPromise = (async () => {
       const first = await this.requestWithRetry('/cookie-check', 'POST', undefined, { allowAuthRetry: false, retrying: false });
+      this.logDebug('### cookie check', { step: 'first', ok: first.ok, reason: (first as any).reason, status: first.status });
       if (first.ok) return;
       if ((first as any).reason !== 'cookie_missing') {
         throw new Error(`Cookie check failed: ${(first as any).reason || first.error || 'unknown_error'}`);
       }
       const second = await this.requestWithRetry('/cookie-check', 'POST', undefined, { allowAuthRetry: false, retrying: false });
+      this.logDebug('### cookie check', { step: 'second', ok: second.ok, reason: (second as any).reason, status: second.status });
       if (!second.ok) {
         throw new Error('Cookie support missing. Provide a cookie-aware fetch implementation for Node/RN.');
       }
@@ -359,7 +504,7 @@ class App {
       throw new Error('Unsupported credentials type');
     }
     const res = await this.revlm.login(cred.email, cred.password);
-    console.log('### App:login res:', res)
+    this.revlm.logInfo('### App:login res:', res);
     if (!res || !res.ok || !res.token) {
       const errMsg = res && !res.ok ? res.error : 'login failed';
       const err: any = new Error(errMsg);

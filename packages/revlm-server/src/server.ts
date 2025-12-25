@@ -454,7 +454,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
     next();
   });
 
-  if (shouldLog('info')) {
+  if (shouldLog('debug')) {
     app.use((req: any, res: any, next: any) => {
       const started = Date.now();
       res.on('finish', () => {
@@ -496,9 +496,13 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
         const token = jwt.sign({ userType: 'provisional' }, JWT_SECRET as string, { expiresIn: '5s' });
         try {
           const decoded = jwt.decode(token);
-          console.log('TOKEN PAYLOAD (provisional-login):', decoded);
+          if (shouldLog('debug')) {
+            console.log('TOKEN PAYLOAD (provisional-login):', decoded);
+          }
         } catch (e) {
-          console.log('Failed to decode provisional token payload', e);
+          if (shouldLog('debug')) {
+            console.log('Failed to decode provisional token payload', e);
+          }
         }
         return sendResponse(req, res, { ok: true, token, user: {} });
       } catch (err: any) {
@@ -507,7 +511,9 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
       }
     });
   } else {
-    console.log('PROVISIONAL_LOGIN_ENABLED is false; /provisional-login route not registered');
+    if (shouldLog('debug')) {
+      console.log('PROVISIONAL_LOGIN_ENABLED is false; /provisional-login route not registered');
+    }
   }
 
   app.post('/login', async (req: Request, res: Response) => {

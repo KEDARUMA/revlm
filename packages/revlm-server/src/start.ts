@@ -2,6 +2,18 @@ import { config as dotenvConfig } from 'dotenv';
 dotenvConfig();
 import { startServer, stopServer, ServerConfig } from './server';
 
+type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+function getServerVersion(): string {
+  try {
+    const pkg = require('../package.json');
+    if (pkg && typeof pkg.version === 'string') return pkg.version;
+  } catch {
+    // ignore: runtime may not expose package.json
+  }
+  return 'unknown';
+}
+
 function toBool(v: string | undefined): boolean | undefined {
   if (v === undefined) return undefined;
   return v === 'true' || v === '1';
@@ -19,6 +31,22 @@ function getEnvOrUndefined(name: string): string | undefined {
   return v;
 }
 
+function normalizeLogLevel(value?: string): LogLevel {
+  if (!value) return 'info';
+  const lowered = value.toLowerCase();
+  if (lowered === 'true' || lowered === '1') return 'debug';
+  if (lowered === 'false' || lowered === '0') return 'error';
+  if (lowered === 'error' || lowered === 'warn' || lowered === 'info' || lowered === 'debug') {
+    return lowered as LogLevel;
+  }
+  return 'info';
+}
+
+function maskSecret(value?: string): string | undefined {
+  if (!value) return undefined;
+  return `<...:${value.length}>`;
+}
+
 async function main() {
   const raw: Record<string, any> = {
     mongoUri: getEnvOrUndefined('MONGO_URI'),
@@ -33,7 +61,8 @@ async function main() {
     refreshWindowSec: toNumber(getEnvOrUndefined('REFRESH_WINDOW_SEC')),
     port: toNumber(getEnvOrUndefined('PORT')),
     refreshSecretSigningKey: getEnvOrUndefined('REFRESH_SECRET_SIGNING_KEY'),
-    logLevel: getEnvOrUndefined('DEBUG_REQUEST_LOG'),
+    // log level: 'error' | 'warn' | 'info' | 'debug'
+    logLevel: getEnvOrUndefined('LOG_LEVEL'),
   };
 
   // Remove undefined entries so optional properties are omitted (satisfies exactOptionalPropertyTypes)
@@ -42,6 +71,25 @@ async function main() {
   ) as Partial<ServerConfig>;
 
   try {
+    const initLogLevel = normalizeLogLevel(raw.logLevel);
+    if (initLogLevel === 'debug' || initLogLevel === 'info') {
+      console.log('🚀 Revlm Server Init', {
+        version: getServerVersion(),
+        mongoUri: maskSecret(raw.mongoUri),
+        usersDbName: raw.usersDbName,
+        usersCollectionName: raw.usersCollectionName,
+        provisionalLoginEnabled: raw.provisionalLoginEnabled,
+        provisionalAuthId: raw.provisionalAuthId,
+        provisionalAuthSecretMaster: maskSecret(raw.provisionalAuthSecretMaster),
+        provisionalAuthDomain: raw.provisionalAuthDomain,
+        jwtSecret: maskSecret(raw.jwtSecret),
+        jwtExpiresIn: raw.jwtExpiresIn,
+        refreshWindowSec: raw.refreshWindowSec,
+        port: raw.port,
+        refreshSecretSigningKey: maskSecret(raw.refreshSecretSigningKey),
+        logLevel: initLogLevel,
+      });
+    }
     await startServer(cfgPartial as ServerConfig);
     console.log('startServer called successfully');
     // Attach shutdown handlers only after successful start (Ctrl+C will trigger SIGINT)
