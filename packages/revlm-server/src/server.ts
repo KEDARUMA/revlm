@@ -35,25 +35,28 @@ export interface ServerConfig {
   provisionalAuthSecretMaster?: string; // required if provisionalLoginEnabled
   provisionalAuthDomain?: string; // required if provisionalLoginEnabled
   jwtSecret: string;
-  jwtExpiresIn?: string;
+  jwtExpiresIn?: number;
   refreshWindowSec?: number;
+  refreshSecretTtlSec?: number;
   port: number;
   refreshSecretSigningKey: string;
   logLevel?: string;
 }
 
-const serverConfigDefaults: Partial<ServerConfig> = {
+export const serverConfigDefaults: Partial<ServerConfig> = {
   provisionalLoginEnabled: false,
-  jwtExpiresIn: '1h',
+  jwtExpiresIn: 3600,
   refreshWindowSec: 300,
+  refreshSecretTtlSec: 300,
   logLevel: 'info',
 };
 
 let serverConfig: ServerConfig | undefined;
 let plpaServer: AuthServer | undefined;
 let JWT_SECRET: string | undefined;
-let JWT_EXPIRES_IN: string | undefined;
+let JWT_EXPIRES_IN: number | undefined;
 let REFRESH_WINDOW_SEC: number | undefined;
+let REFRESH_SECRET_TTL_SEC: number | undefined;
 type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
 const LOG_LEVEL_RANK: Record<LogLevel, number> = {
@@ -112,7 +115,8 @@ function shouldLog(level: LogLevel): boolean {
   return LOG_LEVEL_RANK[level] <= LOG_LEVEL_RANK[LOG_LEVEL];
 }
 
-const REFRESH_SECRET_TTL_SEC = 300;
+const REFRESH_SECRET_TTL_DEFAULT_SEC = 300;
+const REFRESH_SECRET_TTL_ZERO_SEC = 315360000; // 10 years
 const REFRESH_COOKIE_NAME = 'revlm_refresh';
 const COOKIE_CHECK_TTL_SEC = 120;
 const COOKIE_CHECK_NAME = 'revlm_cookie_check';
@@ -152,12 +156,14 @@ async function issueRefreshSecret(userId: ObjectIdType): Promise<{ signed: strin
 function setRefreshCookie(res: Response, signed: string) {
   // HttpOnly Secure SameSite=Lax cookie scoped to /refresh-token
   const secure = process.env.NODE_ENV !== 'test';
+  const rawTtlSec = REFRESH_SECRET_TTL_SEC ?? REFRESH_SECRET_TTL_DEFAULT_SEC;
+  const ttlSec = rawTtlSec === 0 ? REFRESH_SECRET_TTL_ZERO_SEC : rawTtlSec;
   (res as any).cookie(REFRESH_COOKIE_NAME, signed, {
     httpOnly: true,
     secure,
     sameSite: 'lax',
     path: '/refresh-token',
-    maxAge: REFRESH_SECRET_TTL_SEC * 1000,
+    maxAge: ttlSec * 1000,
   });
 }
 
@@ -175,10 +181,12 @@ function setCookieCheck(res: Response, value: string) {
 
 function ensureRefreshSecretValid(user: any, payload: any) {
   const now = Math.floor(Date.now() / 1000);
+  const rawTtlSec = REFRESH_SECRET_TTL_SEC ?? REFRESH_SECRET_TTL_DEFAULT_SEC;
+  const ttlSec = rawTtlSec === 0 ? REFRESH_SECRET_TTL_ZERO_SEC : rawTtlSec;
   if (!payload || typeof payload !== 'object' || !payload.iat || !payload.rs || !payload.sub) {
     throw new Error('refresh_secret_invalid');
   }
-  if (now - payload.iat > REFRESH_SECRET_TTL_SEC) {
+  if (now - payload.iat > ttlSec) {
     throw new Error('refresh_secret_expired');
   }
   if (!user || !user.refreshSecretHash || user.refreshSecretIssuedAt !== payload.iat) {
@@ -321,7 +329,7 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
     }
 
     const { iat, exp: _exp, nbf, ...rest } = decoded as any;
-    const expiresIn = JWT_EXPIRES_IN as string;
+    const expiresIn = JWT_EXPIRES_IN as number;
     const newToken = jwt.sign(rest, JWT_SECRET as string, { expiresIn });
     const refreshed = await issueRefreshSecret(user._id);
     setRefreshCookie(res, refreshed.signed);
@@ -415,6 +423,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
   JWT_SECRET = merged.jwtSecret;
   JWT_EXPIRES_IN = merged.jwtExpiresIn!
   REFRESH_WINDOW_SEC = merged.refreshWindowSec!;
+  REFRESH_SECRET_TTL_SEC = merged.refreshSecretTtlSec ?? REFRESH_SECRET_TTL_DEFAULT_SEC;
   REFRESH_SECRET_SIGNING_KEY = merged.refreshSecretSigningKey;
   LOG_LEVEL = normalizeLogLevel(merged.logLevel);
 
@@ -526,7 +535,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
       const valid = await bcrypt.compare(password, user.passwordHash);
       if (!valid) return sendResponse(req, res, { ok: false, error: 'Authentication failed', code: ERROR_CODES.authFailed }, 401);
       const { _id, userType, roles } = user;
-      const token = jwt.sign({ _id, userType, roles }, JWT_SECRET as string, { expiresIn: JWT_EXPIRES_IN as string });
+      const token = jwt.sign({ _id, userType, roles }, JWT_SECRET as string, { expiresIn: JWT_EXPIRES_IN as number });
       const refreshSecret = await issueRefreshSecret(_id);
       setRefreshCookie(res, refreshSecret.signed);
       try {
