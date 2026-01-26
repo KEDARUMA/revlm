@@ -20,8 +20,36 @@ const captureRaw = (req: any, _res: any, buf: Buffer) => {
     (req as any)._rawBody = buf;
   }
 };
-app.use(express.text({ type: 'application/ejson', verify: captureRaw }));
-app.use(express.json({ verify: captureRaw }));
+const parseSizeToBytes = (raw: string | undefined): number | undefined => {
+  if (!raw) return undefined;
+  const trimmed = raw.trim().toLowerCase();
+  const match = trimmed.match(/^(\d+(?:\.\d+)?)(b|kb|mb|gb)?$/);
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  const unit = match[2] ?? 'b';
+  const multipliers: Record<string, number> = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3 };
+  return Math.floor(value * (multipliers[unit] ?? 1));
+};
+const BODY_LIMIT_RAW = process.env.BODY_LIMIT;
+const BODY_WARN_THRESHOLD_RAW = process.env.BODY_WARN_THRESHOLD;
+const BODY_LIMIT = BODY_LIMIT_RAW ?? '1mb';
+const BODY_WARN_THRESHOLD = parseSizeToBytes(BODY_WARN_THRESHOLD_RAW ?? '100kb') ?? 100 * 1024;
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  const contentLengthHeader = req.headers['content-length'];
+  const contentLength = typeof contentLengthHeader === 'string' ? Number(contentLengthHeader) : undefined;
+  if (contentLength && contentLength > BODY_WARN_THRESHOLD) {
+    const isGate = (req.originalUrl || req.url || '').includes('/revlm-gate');
+    console.warn('[body-size warning]', {
+      url: req.originalUrl || req.url,
+      contentLength,
+      threshold: BODY_WARN_THRESHOLD,
+      ...(isGate ? { query: req.body } : {}),
+    });
+  }
+  next();
+});
+app.use(express.text({ type: 'application/ejson', verify: captureRaw, limit: BODY_LIMIT }));
+app.use(express.json({ verify: captureRaw, limit: BODY_LIMIT }));
 
 export let client: MongoClientType | undefined;
 

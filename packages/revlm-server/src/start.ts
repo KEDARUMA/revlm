@@ -112,6 +112,8 @@ async function main() {
         'JWT_EXPIRES_IN(jwtExpiresIn)': withDefault('jwtExpiresIn', raw.jwtExpiresIn, mergedForLog.jwtExpiresIn),
         'REFRESH_WINDOW_SEC(refreshWindowSec)': withDefault('refreshWindowSec', raw.refreshWindowSec, mergedForLog.refreshWindowSec),
         'REFRESH_SECRET_TTL_SEC(refreshSecretTtlSec)': withDefault('refreshSecretTtlSec', raw.refreshSecretTtlSec, mergedForLog.refreshSecretTtlSec),
+        'BODY_LIMIT(bodyLimit)': process.env.BODY_LIMIT ?? '1mb [default]',
+        'BODY_WARN_THRESHOLD(bodyWarnThreshold)': process.env.BODY_WARN_THRESHOLD ?? '100kb [default]',
         'PORT(port)': raw.port === undefined ? `${resolvedPort} [default]` : resolvedPort,
         'REFRESH_SECRET_SIGNING_KEY(refreshSecretSigningKey)': maskSecret(mergedForLog.refreshSecretSigningKey),
         'LOG_LEVEL(logLevel)': withDefault('logLevel', raw.logLevel, initLogLevel),
