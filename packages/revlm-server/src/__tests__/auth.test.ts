@@ -9,7 +9,7 @@
 // - provisional のログインの挙動
 // - revlm-server の主要な認証APIの動作確認
 import request from 'supertest';
-import { ObjectId } from 'bson';
+import { ObjectId, EJSON } from 'bson';
 import dotenv from 'dotenv';
 import { User } from '@kedaruma/revlm-shared/models/user-types';
 import { AuthClient } from '@kedaruma/revlm-shared/auth-token';
@@ -43,6 +43,22 @@ const testUser: User = {
 
 let testEnv: SetupTestEnvironmentResult;
 let serverUrl: string;
+
+// Parse EJSON response bodies into objects.
+// EJSONレスポンスをオブジェクトに変換する。
+function parseBody(res: request.Response): any {
+  if (res && res.body && typeof res.body === 'object' && Object.keys(res.body).length) {
+    return res.body;
+  }
+  if (res && typeof res.text === 'string' && res.text.length) {
+    try {
+      return EJSON.parse(res.text);
+    } catch {
+      return res.text;
+    }
+  }
+  return res?.body;
+}
 
 // beforeAll: Test setup
 // - If MONGO_URI is not set, start MongoMemoryServer
@@ -125,7 +141,8 @@ describe('Auth API Integration', () => {
     const loginRes = await request(serverUrl)
       .post('/login')
       .send(loginBody);
-    const token = loginRes.body.token;
+    const loginBodyParsed = parseBody(loginRes);
+    const token = loginBodyParsed.token;
 
     // Payload for the user to be registered
     // 登録対象ユーザのペイロード
@@ -144,8 +161,9 @@ describe('Auth API Integration', () => {
       .send(regBody);
 
     // 期待値: ok: true, user.authId が渡した値であること
-    expect(res.body.ok).toBe(true);
-    expect(res.body.user.authId).toBe('api_test_user');
+    const regBodyParsed = parseBody(res);
+    expect(regBodyParsed.ok).toBe(true);
+    expect(regBodyParsed.user.authId).toBe('api_test_user');
   });
 
   it('deleteUser API: should delete user with valid token', async () => {
@@ -155,7 +173,8 @@ describe('Auth API Integration', () => {
     const loginRes = await request(serverUrl)
       .post('/login')
       .send(loginBody);
-    const token = loginRes.body.token;
+    const loginBodyParsed = parseBody(loginRes);
+    const token = loginBodyParsed.token;
 
     // Call /deleteUser to delete the dummy user created earlier
     // /deleteUser を呼び先ほど作成したダミーユーザを削除する
@@ -166,8 +185,9 @@ describe('Auth API Integration', () => {
       .send(delBody);
 
     // 期待値: ok: true, deletedCount が 1
-    expect(res.body.ok).toBe(true);
-    expect(res.body.deletedCount).toBe(1);
+    const delBodyParsed = parseBody(res);
+    expect(delBodyParsed.ok).toBe(true);
+    expect(delBodyParsed.deletedCount).toBe(1);
   });
 });
 
@@ -185,9 +205,10 @@ describe('Provisional Login API', () => {
     const res = await request(serverUrl)
       .post('/provisional-login')
       .send(body);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.token).toBeDefined();
-    expect(res.body.user).toBeDefined();
+    const bodyParsed = parseBody(res);
+    expect(bodyParsed.ok).toBe(true);
+    expect(bodyParsed.token).toBeDefined();
+    expect(bodyParsed.user).toBeDefined();
   });
 
   // 不正な情報で /provisional-login を呼び出しても失敗することを確認
@@ -197,8 +218,9 @@ describe('Provisional Login API', () => {
     const res = await request(serverUrl)
       .post('/provisional-login')
       .send(body);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.token).toBeUndefined();
+    const bodyParsed = parseBody(res);
+    expect(bodyParsed.ok).toBe(false);
+    expect(bodyParsed.token).toBeUndefined();
   });
 
   // provisional login のトークンで /revlm-gate 使うと 403 になることを確認
@@ -209,8 +231,9 @@ describe('Provisional Login API', () => {
     const loginRes = await request(serverUrl)
       .post('/provisional-login')
       .send(loginBody);
-    expect(loginRes.body.ok).toBe(true);
-    const token = loginRes.body.token;
+    const loginBodyParsed = parseBody(loginRes);
+    expect(loginBodyParsed.ok).toBe(true);
+    const token = loginBodyParsed.token;
 
     const gateBody = { db: USERS_DB_NAME, collection: USERS_COLLECTION_NAME, method: 'find', filter: {} };
     const res = await request(serverUrl)
@@ -219,7 +242,8 @@ describe('Provisional Login API', () => {
       .send(gateBody);
 
     expect(res.status).toBe(403);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.error).toBeDefined();
+    const bodyParsed = parseBody(res);
+    expect(bodyParsed.ok).toBe(false);
+    expect(bodyParsed.error).toBeDefined();
   });
 });

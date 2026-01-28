@@ -5,7 +5,7 @@
 // - gate エンドポイント経由で CRUD / クエリ各メソッドを実行
 // - setupTestEnvironment でサーバ + （インメモリ）MongoDB を起動
 import request from 'supertest';
-import { ObjectId } from 'bson';
+import { ObjectId, EJSON } from 'bson';
 import dotenv from 'dotenv';
 import path from 'path';
 import { ensureDefined } from '@kedaruma/revlm-shared/utils/asserts';
@@ -33,6 +33,22 @@ const PROVISIONAL_AUTH_ID = ensureDefined(process.env.PROVISIONAL_AUTH_ID);
 let testEnv: SetupTestEnvironmentResult;
 let serverUrl: string;
 let token: string;
+
+// Parse EJSON response bodies into objects.
+// EJSONレスポンスをオブジェクトに変換する。
+function parseBody(res: request.Response): any {
+  if (res && res.body && typeof res.body === 'object' && Object.keys(res.body).length) {
+    return res.body;
+  }
+  if (res && typeof res.text === 'string' && res.text.length) {
+    try {
+      return EJSON.parse(res.text);
+    } catch {
+      return res.text;
+    }
+  }
+  return res?.body;
+}
 
 // Test user and collection
 // テスト用ユーザとコレクション
@@ -82,8 +98,9 @@ beforeAll(async () => {
     .post('/login')
     .send({ authId: testAuthId, password: testPassword });
   expect(loginRes.status).toBe(200);
-  expect(loginRes.body.ok).toBe(true);
-  token = loginRes.body.token as string;
+  const loginBodyParsed = parseBody(loginRes);
+  expect(loginBodyParsed.ok).toBe(true);
+  token = loginBodyParsed.token as string;
 });
 
 afterAll(async () => {
@@ -102,60 +119,62 @@ afterAll(async () => {
   await cleanupTestEnvironment(testEnv);
 });
 
-// helper: call /revlm-gate
-// helper: /revlm-gate 呼び出し
+// Call /revlm-gate and parse EJSON response.
+// /revlm-gate を呼び出して EJSON を解析する。
 async function gateCall(body: any) {
-  return request(serverUrl)
+  const res = await request(serverUrl)
     .post('/revlm-gate')
     .set('X-Revlm-JWT', `Bearer ${token}`)
     .send(body);
+  const parsed = parseBody(res);
+  return { res, body: parsed };
 }
 
 // /revlm-gate 統合テスト（watch を除く）
 describe('/revlm-gate Integration (excluding watch)', () => {
   // 1) insertOne
   it('insertOne creates a document', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'insertOne',
       document: { name: 'gateA', value: 1 },
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.result && res.body.result.insertedId).toBeDefined();
+    expect(body.ok).toBe(true);
+    expect(body.result && body.result.insertedId).toBeDefined();
   });
 
   // 2) find
   it('find returns inserted docs', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'find',
       filter: { name: 'gateA' },
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(Array.isArray(res.body.result)).toBe(true);
-    expect(res.body.result.length).toBeGreaterThanOrEqual(1);
+    expect(body.ok).toBe(true);
+    expect(Array.isArray(body.result)).toBe(true);
+    expect(body.result.length).toBeGreaterThanOrEqual(1);
   });
 
   // 3) findOne
   it('findOne returns a single document', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'findOne',
       filter: { name: 'gateA' },
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.result && res.body.result.name).toBe('gateA');
+    expect(body.ok).toBe(true);
+    expect(body.result && body.result.name).toBe('gateA');
   });
 
   // 4) updateOne
   it('updateOne modifies a document', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'updateOne',
@@ -163,13 +182,13 @@ describe('/revlm-gate Integration (excluding watch)', () => {
       update: { $set: { value: 2 } },
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.result && res.body.result.modifiedCount).toBeGreaterThanOrEqual(1);
+    expect(body.ok).toBe(true);
+    expect(body.result && body.result.modifiedCount).toBeGreaterThanOrEqual(1);
   });
 
   // 5) findOneAndUpdate (return updated)
   it('findOneAndUpdate returns updated document', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'findOneAndUpdate',
@@ -178,22 +197,22 @@ describe('/revlm-gate Integration (excluding watch)', () => {
       options: { returnDocument: 'after' },
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    expect(body.ok).toBe(true);
     // 一部ドライババージョンでは result.value が空になる場合があるため、後続の findOne で確定検証
-    const check = await gateCall({
+    const { res: checkRes, body: checkBody } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'findOne',
       filter: { name: 'gateA' },
     });
-    expect(check.status).toBe(200);
-    expect(check.body.ok).toBe(true);
-    expect(check.body.result && check.body.result.value).toBe(3);
+    expect(checkRes.status).toBe(200);
+    expect(checkBody.ok).toBe(true);
+    expect(checkBody.result && checkBody.result.value).toBe(3);
   });
 
   // 6) insertMany
   it('insertMany inserts multiple docs', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'insertMany',
@@ -203,43 +222,43 @@ describe('/revlm-gate Integration (excluding watch)', () => {
       ],
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    const insertedIds = res.body.result && res.body.result.insertedIds;
+    expect(body.ok).toBe(true);
+    const insertedIds = body.result && body.result.insertedIds;
     expect(insertedIds && Object.keys(insertedIds).length).toBe(2);
   });
 
   // 7) count (countDocuments)
   it('count returns number of matched documents', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'count',
       filter: { name: 'gateA' },
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(typeof res.body.result).toBe('number');
-    expect(res.body.result).toBeGreaterThanOrEqual(2);
+    expect(body.ok).toBe(true);
+    expect(typeof body.result).toBe('number');
+    expect(body.result).toBeGreaterThanOrEqual(2);
   });
 
   // 8) aggregate (simple $match)
   it('aggregate with $match returns subset', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'aggregate',
       pipeline: [{ $match: { name: 'gateB' } }],
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(Array.isArray(res.body.result)).toBe(true);
-    expect(res.body.result.length).toBe(1);
-    expect(res.body.result[0] && res.body.result[0].name).toBe('gateB');
+    expect(body.ok).toBe(true);
+    expect(Array.isArray(body.result)).toBe(true);
+    expect(body.result.length).toBe(1);
+    expect(body.result[0] && body.result[0].name).toBe('gateB');
   });
 
   // 9) findOneAndReplace
   it('findOneAndReplace replaces a document', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'findOneAndReplace',
@@ -248,22 +267,22 @@ describe('/revlm-gate Integration (excluding watch)', () => {
       options: { returnDocument: 'after' },
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    expect(body.ok).toBe(true);
     // 戻り値の形に依存せず、findOne で置換結果を確認
-    const check = await gateCall({
+    const { res: checkRes, body: checkBody } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'findOne',
       filter: { name: 'gateB' },
     });
-    expect(check.status).toBe(200);
-    expect(check.body.ok).toBe(true);
-    expect(check.body.result && check.body.result.value).toBe(99);
+    expect(checkRes.status).toBe(200);
+    expect(checkBody.ok).toBe(true);
+    expect(checkBody.result && checkBody.result.value).toBe(99);
   });
 
   // 10) updateMany
   it('updateMany modifies multiple docs', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'updateMany',
@@ -271,59 +290,59 @@ describe('/revlm-gate Integration (excluding watch)', () => {
       update: { $inc: { value: 1 } },
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.result && res.body.result.modifiedCount).toBeGreaterThanOrEqual(1);
+    expect(body.ok).toBe(true);
+    expect(body.result && body.result.modifiedCount).toBeGreaterThanOrEqual(1);
   });
 
   // 11) deleteOne
   it('deleteOne removes one document', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'deleteOne',
       filter: { name: 'gateA' },
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.result && res.body.result.deletedCount).toBe(1);
+    expect(body.ok).toBe(true);
+    expect(body.result && body.result.deletedCount).toBe(1);
   });
 
   // 12) deleteMany
   it('deleteMany removes multiple documents', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'deleteMany',
       filter: { name: 'gateA' },
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.result && res.body.result.deletedCount).toBeGreaterThanOrEqual(1);
+    expect(body.ok).toBe(true);
+    expect(body.result && body.result.deletedCount).toBeGreaterThanOrEqual(1);
   });
 
   // 13) drop (最後にコレクション削除を確認)
   it('drop removes the test collection', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'drop',
     });
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    expect(body.ok).toBe(true);
     // MongoDB ドライバは drop 成功時に true を返す
-    expect(res.body.result).toBe(true);
+    expect(body.result).toBe(true);
   });
 
   // 14) 不正なメソッド名でエラーが返される
   it('invalid method returns error', async () => {
-    const res = await gateCall({
+    const { res, body } = await gateCall({
       db: USERS_DB_NAME,
       collection: testCollection,
       method: 'invalidMethodName',
       filter: {},
     });
     // サーバが不正なメソッドを拒否することを確認
-    expect(res.body.ok).toBe(false);
+    expect(body.ok).toBe(false);
     // ステータスコードが 400 または 403 であることを確認
     expect([400, 403, 500]).toContain(res.status);
   });

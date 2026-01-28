@@ -26,6 +26,7 @@ jest.setTimeout(120000);
 
 const TEST_DB = 'testdb';
 const COLL_NAME = 'testcoll';
+const SESSION_ID = 'test-session';
 
 function createFetchWithCookies(baseFetch: typeof fetch) {
   const cookieJar = { value: '' };
@@ -72,6 +73,7 @@ describe('RevlmCollection (integration)', () => {
       provisionalAuthSecretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER as string,
       provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
       fetchImpl: createFetchWithCookies(fetch),
+      sessionId: SESSION_ID,
     });
     // Perform provisional login to obtain token for test setup
     // 仮ログインを実行してテストセットアップ用のトークンを取得

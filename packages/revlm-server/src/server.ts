@@ -148,6 +148,7 @@ const REFRESH_SECRET_TTL_ZERO_SEC = 315360000; // 10 years
 const REFRESH_COOKIE_NAME = 'revlm_refresh';
 const COOKIE_CHECK_TTL_SEC = 120;
 const COOKIE_CHECK_NAME = 'revlm_cookie_check';
+const SESSION_HEADER_NAME = 'x-revlm-session-id';
 const ERROR_CODES = {
   authFailed: 4349,
   tokenExpired: 40101,
@@ -169,15 +170,90 @@ function parseCookies(req: Request): Record<string, string> {
   }, {} as Record<string, string>);
 }
 
-async function issueRefreshSecret(userId: ObjectIdType): Promise<{ signed: string; issuedAt: number }> {
+function normalizeSessionId(value?: string): string | undefined {
+  if (!value) return undefined;
+  const trimmed = String(value).trim();
+  return trimmed.length ? trimmed : undefined;
+}
+
+function resolveSessionId(req: Request, payloadSid?: string): string {
+  const headerSid = normalizeSessionId(req.headers?.[SESSION_HEADER_NAME] as string | undefined);
+  const payloadSessionId = normalizeSessionId(payloadSid);
+  return headerSid || payloadSessionId || 'legacy';
+}
+
+type RefreshSession = {
+  sessionId: string;
+  refreshSecretHash: string;
+  refreshSecretIssuedAt: number;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+function resolveRefreshSession(user: any, sessionId: string): RefreshSession | null {
+  if (!user) return null;
+  const sessions = Array.isArray(user.refreshSessions) ? user.refreshSessions : [];
+  const match = sessions.find((s: any) => s && s.sessionId === sessionId);
+  if (match) return match as RefreshSession;
+  if (sessionId === 'legacy' && user.refreshSecretHash && user.refreshSecretIssuedAt) {
+    return {
+      sessionId,
+      refreshSecretHash: user.refreshSecretHash,
+      refreshSecretIssuedAt: user.refreshSecretIssuedAt,
+    };
+  }
+  return null;
+}
+
+async function upsertRefreshSession(userId: ObjectIdType, sessionId: string, refreshSecretHash: string, issuedAt: number) {
+  const oid = toObjectId(userId);
+  if (!oid) throw new Error('invalid_user_id');
+  const userCol = getClient().db(USERS_DB_NAME as string).collection(USERS_COLLECTION as string);
+  const updatedAt = issuedAt;
+  const result = await userCol.updateOne(
+    { _id: oid, 'refreshSessions.sessionId': sessionId },
+    {
+      $set: {
+        'refreshSessions.$.refreshSecretHash': refreshSecretHash,
+        'refreshSessions.$.refreshSecretIssuedAt': issuedAt,
+        'refreshSessions.$.updatedAt': updatedAt,
+      },
+    }
+  );
+  if (!result.matchedCount) {
+    await userCol.updateOne(
+      { _id: oid },
+      {
+        $push: {
+          refreshSessions: {
+            sessionId,
+            refreshSecretHash,
+            refreshSecretIssuedAt: issuedAt,
+            createdAt: issuedAt,
+            updatedAt,
+          },
+        },
+      } as any
+    );
+  }
+}
+
+async function issueRefreshSecret(userId: ObjectIdType, sessionId: string): Promise<{ signed: string; issuedAt: number }> {
   const oid = toObjectId(userId);
   if (!oid) throw new Error('invalid_user_id');
   const issuedAt = Math.floor(Date.now() / 1000);
   const secret = crypto.randomBytes(32).toString('base64url');
-  const signed = jwt.sign({ sub: String(userId), rs: secret, iat: issuedAt }, REFRESH_SECRET_SIGNING_KEY as string, { algorithm: 'HS256' });
+  const signed = jwt.sign(
+    { sub: String(userId), rs: secret, iat: issuedAt, sid: sessionId },
+    REFRESH_SECRET_SIGNING_KEY as string,
+    { algorithm: 'HS256' }
+  );
   const refreshSecretHash = await bcrypt.hash(secret, 10);
-  const userCol = getClient().db(USERS_DB_NAME as string).collection(USERS_COLLECTION as string);
-  await userCol.updateOne({ _id: oid }, { $set: { refreshSecretHash, refreshSecretIssuedAt: issuedAt } });
+  await upsertRefreshSession(userId, sessionId, refreshSecretHash, issuedAt);
+  if (sessionId === 'legacy') {
+    const userCol = getClient().db(USERS_DB_NAME as string).collection(USERS_COLLECTION as string);
+    await userCol.updateOne({ _id: oid }, { $set: { refreshSecretHash, refreshSecretIssuedAt: issuedAt } });
+  }
   return { signed, issuedAt };
 }
 
@@ -207,7 +283,7 @@ function setCookieCheck(res: Response, value: string) {
   });
 }
 
-function ensureRefreshSecretValid(user: any, payload: any) {
+function ensureRefreshSecretValid(user: any, payload: any, sessionId: string) {
   const now = Math.floor(Date.now() / 1000);
   const rawTtlSec = REFRESH_SECRET_TTL_SEC ?? REFRESH_SECRET_TTL_DEFAULT_SEC;
   const ttlSec = rawTtlSec === 0 ? REFRESH_SECRET_TTL_ZERO_SEC : rawTtlSec;
@@ -217,7 +293,8 @@ function ensureRefreshSecretValid(user: any, payload: any) {
   if (now - payload.iat > ttlSec) {
     throw new Error('refresh_secret_expired');
   }
-  if (!user || !user.refreshSecretHash || user.refreshSecretIssuedAt !== payload.iat) {
+  const session = resolveRefreshSession(user, sessionId);
+  if (!session || !session.refreshSecretHash || session.refreshSecretIssuedAt !== payload.iat) {
     throw new Error('refresh_secret_mismatch');
   }
 }
@@ -329,39 +406,46 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
         console.log('refresh-token refresh secret verify error - name:', _e && _e.name, 'message:', _e && _e.message);
         return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.invalidToken }, 403);
       }
+      const headerSessionId = normalizeSessionId(req.headers?.[SESSION_HEADER_NAME] as string | undefined);
+      const payloadSessionId = normalizeSessionId(refreshPayload?.sid);
+      if (headerSessionId && payloadSessionId && headerSessionId !== payloadSessionId) {
+        return sendResponse(req, res, { ok: false, reason: 'refresh_secret_mismatch', code: ERROR_CODES.invalidToken }, 403);
+      }
+      const sessionId = headerSessionId || payloadSessionId || 'legacy';
 
-    const userCol = getClient().db(USERS_DB_NAME as string).collection(USERS_COLLECTION as string);
-    const subId = toObjectId(refreshPayload.sub);
-    if (!subId) return sendResponse(req, res, { ok: false, reason: 'invalid_token' }, 403);
-    const user = await userCol.findOne({ _id: subId });
-    if (!user) return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
-    if (String(decoded._id) !== String(user._id)) return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
+      const userCol = getClient().db(USERS_DB_NAME as string).collection(USERS_COLLECTION as string);
+      const subId = toObjectId(refreshPayload.sub);
+      if (!subId) return sendResponse(req, res, { ok: false, reason: 'invalid_token' }, 403);
+      const user = await userCol.findOne({ _id: subId });
+      if (!user) return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
+      if (String(decoded._id) !== String(user._id)) return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
 
-    try {
-      ensureRefreshSecretValid(user, refreshPayload);
-    } catch (err: any) {
-      const reason = err?.message || 'refresh_secret_invalid';
-      const status = reason === 'refresh_secret_expired' ? 401 : 403;
-      const code = reason === 'refresh_secret_expired' ? ERROR_CODES.tokenExpired : ERROR_CODES.invalidToken;
-      return sendResponse(req, res, { ok: false, reason, code }, status);
-    }
+      try {
+        ensureRefreshSecretValid(user, refreshPayload, sessionId);
+      } catch (err: any) {
+        const reason = err?.message || 'refresh_secret_invalid';
+        const status = reason === 'refresh_secret_expired' ? 401 : 403;
+        const code = reason === 'refresh_secret_expired' ? ERROR_CODES.tokenExpired : ERROR_CODES.invalidToken;
+        return sendResponse(req, res, { ok: false, reason, code }, status);
+      }
 
-    const match = await bcrypt.compare(refreshPayload.rs, user.refreshSecretHash || '');
-    if (!match) return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.invalidToken }, 403);
+      const session = resolveRefreshSession(user, sessionId);
+      const match = await bcrypt.compare(refreshPayload.rs, session?.refreshSecretHash || '');
+      if (!match) return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.invalidToken }, 403);
 
-    const exp = decoded && decoded.exp ? Number(decoded.exp) : undefined;
-    const now = Math.floor(Date.now() / 1000);
-    const refreshWindow = REFRESH_WINDOW_SEC as number;
-    if (refreshWindow > 0 && exp && now - exp > refreshWindow) {
-      return sendResponse(req, res, { ok: false, reason: 'refresh_window_exceeded', code: ERROR_CODES.refreshWindowExceeded }, 403);
-    }
+      const exp = decoded && decoded.exp ? Number(decoded.exp) : undefined;
+      const now = Math.floor(Date.now() / 1000);
+      const refreshWindow = REFRESH_WINDOW_SEC as number;
+      if (refreshWindow > 0 && exp && now - exp > refreshWindow) {
+        return sendResponse(req, res, { ok: false, reason: 'refresh_window_exceeded', code: ERROR_CODES.refreshWindowExceeded }, 403);
+      }
 
-    const { iat, exp: _exp, nbf, ...rest } = decoded as any;
-    const expiresIn = JWT_EXPIRES_IN as number;
-    const newToken = jwt.sign(rest, JWT_SECRET as string, { expiresIn });
-    const refreshed = await issueRefreshSecret(user._id);
-    setRefreshCookie(res, refreshed.signed);
-    return sendResponse(req, res, { ok: true, token: newToken, expiresIn }, 200);
+      const { iat, exp: _exp, nbf, ...rest } = decoded as any;
+      const expiresIn = JWT_EXPIRES_IN as number;
+      const newToken = jwt.sign(rest, JWT_SECRET as string, { expiresIn });
+      const refreshed = await issueRefreshSecret(user._id, sessionId);
+      setRefreshCookie(res, refreshed.signed);
+      return sendResponse(req, res, { ok: true, token: newToken, expiresIn }, 200);
   } catch (err: any) {
     console.log('refresh-token unexpected error - name:', err && err.name, 'message:', err && err.message);
     return sendResponse(req, res, { ok: false, reason: 'invalid_token' }, 500);
@@ -564,7 +648,8 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
       if (!valid) return sendResponse(req, res, { ok: false, error: 'Authentication failed', code: ERROR_CODES.authFailed }, 401);
       const { _id, userType, roles } = user;
       const token = jwt.sign({ _id, userType, roles }, JWT_SECRET as string, { expiresIn: JWT_EXPIRES_IN as number });
-      const refreshSecret = await issueRefreshSecret(_id);
+      const sessionId = resolveSessionId(req);
+      const refreshSecret = await issueRefreshSecret(_id, sessionId);
       setRefreshCookie(res, refreshSecret.signed);
       try {
         const decoded = jwt.decode(token);

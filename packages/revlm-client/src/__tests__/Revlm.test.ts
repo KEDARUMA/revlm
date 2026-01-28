@@ -23,6 +23,7 @@ dotenv.config({ path: path.join(__dirname, 'test.env') });
 let testEnv: SetupTestEnvironmentResult;
 
 jest.setTimeout(20000);
+const SESSION_ID = 'test-session';
 
 function createFetchWithCookies(baseFetch: typeof fetch) {
   const cookieJar = { value: '' };
@@ -73,6 +74,7 @@ describe('Revlm.provisionalLogin (integration)', () => {
       provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
       autoRefreshOn401: process.env.AUTO_REFRESH_ON_401 === 'true',
       fetchImpl: createFetchWithCookies(fetch),
+      sessionId: SESSION_ID,
     });
     const res = await v.provisionalLogin(process.env.PROVISIONAL_AUTH_ID as string);
     if (!res.ok || !res.token) throw new Error('Failed to obtain provisional token in beforeAll: ' + JSON.stringify(res));

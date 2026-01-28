@@ -8,6 +8,7 @@
 // - トークンの有効期限とリフレッシュウィンドウの動作を検証
 
 import request from 'supertest';
+import { EJSON } from 'bson';
 const jwt = require('jsonwebtoken');
 import dotenv from 'dotenv';
 import { SetupTestEnvironmentResult, setupTestEnvironment, cleanupTestEnvironment } from './setupTestMongo';
@@ -35,6 +36,7 @@ let provUserDoc: any;
 
 const STAFF_USER = { authId: 'token_user', password: 'tokenpass', userType: 'staff' as const, roles: ['a'] };
 const PROV_USER = { authId: 'prov_token_user', password: 'provpass', userType: 'provisional' as const, roles: ['p'] };
+const SESSION_ID = 'test-session';
 
 async function upsertUser(user: typeof STAFF_USER | typeof PROV_USER) {
   const col = mongoClient
@@ -49,17 +51,36 @@ async function upsertUser(user: typeof STAFF_USER | typeof PROV_USER) {
   return await col.findOne({ authId: user.authId });
 }
 
-async function loginAndGetCookie(authId: string, password: string) {
-  const res = await request(SERVER_URL).post('/login').send({ authId, password });
+async function loginAndGetCookie(authId: string, password: string, sessionId = SESSION_ID) {
+  const res = await request(SERVER_URL)
+    .post('/login')
+    .set('x-revlm-session-id', sessionId)
+    .send({ authId, password });
+  const body = parseBody(res);
   const cookies = ([] as string[]).concat(res.headers['set-cookie'] || []);
   const cookie = cookies.find((c: string) => c.startsWith('revlm_refresh'));
-  return { token: res.body.token, cookie };
+  return { token: body?.token, cookie };
 }
 
-async function signedPost(pathname: string, body: any, token?: string) {
+async function signedPost(pathname: string, body: any, token?: string, sessionId = SESSION_ID) {
   const req = request(SERVER_URL).post(pathname);
   if (token) req.set('X-Revlm-JWT', `Bearer ${token}`);
+  if (sessionId) req.set('x-revlm-session-id', sessionId);
   return req.send(body);
+}
+
+function parseBody(res: request.Response): any {
+  if (res && res.body && typeof res.body === 'object' && Object.keys(res.body).length) {
+    return res.body;
+  }
+  if (res && typeof res.text === 'string' && res.text.length) {
+    try {
+      return EJSON.parse(res.text);
+    } catch {
+      return res.text;
+    }
+  }
+  return res?.body;
 }
 
 beforeAll(async () => {
@@ -106,10 +127,11 @@ describe('/verify-token', () => {
   it('returns payload for valid token', async () => {
     const token = jwt.sign({ foo: 'bar' }, JWT_SECRET, { expiresIn: '1h' });
     const res = await signedPost('/verify-token', {}, token);
+    const body = parseBody(res);
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.payload).toBeDefined();
-    expect(res.body.payload.foo).toBe('bar');
+    expect(body.ok).toBe(true);
+    expect(body.payload).toBeDefined();
+    expect(body.payload.foo).toBe('bar');
   });
 
   // 期限切れトークンに対して token_expired を返す
@@ -117,25 +139,28 @@ describe('/verify-token', () => {
     const payload = { foo: 'baz', exp: Math.floor(Date.now() / 1000) - 10 };
     const token = jwt.sign(payload as any, JWT_SECRET);
     const res = await signedPost('/verify-token', {}, token);
+    const body = parseBody(res);
     expect(res.status).toBe(401);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.reason).toBe('token_expired');
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe('token_expired');
   });
 
   // 不正なトークンに対して invalid_token を返す
   it('returns invalid_token for malformed token', async () => {
     const res = await signedPost('/verify-token', {}, 'invalid.token.here');
+    const body = parseBody(res);
     expect(res.status).toBe(403);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.reason).toBe('invalid_token');
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe('invalid_token');
   });
 });
 
 describe('/refresh-token', () => {
-  async function refresh(token: string, cookie?: string, serverUrl = SERVER_URL) {
+  async function refresh(token: string, cookie?: string, serverUrl = SERVER_URL, sessionId = SESSION_ID) {
     const req = request(serverUrl)
       .post('/refresh-token')
       .set('X-Revlm-JWT', `Bearer ${token}`);
+    if (sessionId) req.set('x-revlm-session-id', sessionId);
     if (cookie) req.set('Cookie', [cookie]);
     return req.send({});
   }
@@ -147,20 +172,23 @@ describe('/refresh-token', () => {
       JWT_SECRET
     );
     const res = await refresh(expired, cookie);
+    const body = parseBody(res);
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.token).toBeDefined();
-    const verify = await signedPost('/verify-token', {}, res.body.token);
+    expect(body.ok).toBe(true);
+    expect(body.token).toBeDefined();
+    const verify = await signedPost('/verify-token', {}, body.token);
+    const verifyBody = parseBody(verify);
     expect(verify.status).toBe(200);
-    expect(verify.body.ok).toBe(true);
+    expect(verifyBody.ok).toBe(true);
   });
 
   it('rejects refresh when token is not expired', async () => {
     const { token, cookie } = await loginAndGetCookie(STAFF_USER.authId, STAFF_USER.password);
     const res = await refresh(token, cookie);
+    const body = parseBody(res);
     expect(res.status).toBe(400);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.reason).toBe('not_expired');
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe('not_expired');
   });
 
   it('rejects provisional tokens even if expired', async () => {
@@ -170,9 +198,10 @@ describe('/refresh-token', () => {
       JWT_SECRET
     );
     const res = await refresh(expired, cookie);
+    const body = parseBody(res);
     expect(res.status).toBe(403);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.reason).toBe('provisional_forbidden');
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe('provisional_forbidden');
   });
 
   it('rejects refresh beyond grace window', async () => {
@@ -183,9 +212,23 @@ describe('/refresh-token', () => {
       JWT_SECRET
     );
     const res = await refresh(expired, cookie);
+    const body = parseBody(res);
     expect(res.status).toBe(403);
-    expect(res.body.ok).toBe(false);
-    expect(res.body.reason).toBe('refresh_window_exceeded');
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe('refresh_window_exceeded');
+  });
+
+  it('rejects refresh when sessionId mismatches', async () => {
+    const { cookie } = await loginAndGetCookie(STAFF_USER.authId, STAFF_USER.password, 'sess-a');
+    const expired = jwt.sign(
+      { _id: staffUserDoc._id, userType: staffUserDoc.userType, roles: staffUserDoc.roles, exp: Math.floor(Date.now() / 1000) - 10 },
+      JWT_SECRET
+    );
+    const res = await refresh(expired, cookie, SERVER_URL, 'sess-b');
+    const body = parseBody(res);
+    expect(res.status).toBe(403);
+    expect(body.ok).toBe(false);
+    expect(body.reason).toBe('refresh_secret_mismatch');
   });
 });
 
@@ -233,7 +276,10 @@ describe('/refresh-token with unlimited window', () => {
   });
 
   it('refreshes even long-expired token when window is unlimited', async () => {
-    const loginRes = await request(serverUrlUnlimited).post('/login').send({ authId: 'unlimited-user', password: 'unlimited-pass' });
+    const loginRes = await request(serverUrlUnlimited)
+      .post('/login')
+      .set('x-revlm-session-id', SESSION_ID)
+      .send({ authId: 'unlimited-user', password: 'unlimited-pass' });
     const rawSetCookie = loginRes.headers['set-cookie'] || [];
     const cookies = ([] as string[]).concat(rawSetCookie as any);
     const cookieFull = cookies.find((c: string) => c.startsWith('revlm_refresh'));
@@ -243,10 +289,12 @@ describe('/refresh-token with unlimited window', () => {
     const res = await request(serverUrlUnlimited)
       .post('/refresh-token')
       .set('X-Revlm-JWT', `Bearer ${token}`)
+      .set('x-revlm-session-id', SESSION_ID)
       .set('Cookie', refreshCookie ? [refreshCookie] : [])
       .send({});
+    const body = parseBody(res);
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.token).toBeDefined();
+    expect(body.ok).toBe(true);
+    expect(body.token).toBeDefined();
   });
 });

@@ -28,6 +28,7 @@ dotenv.config({ path: path.join(__dirname, 'test.env') });
 let testEnv: SetupTestEnvironmentResult;
 
 jest.setTimeout(20000);
+const SESSION_ID = 'test-session';
 
 function createFetchWithCookies(baseFetch: typeof fetch) {
   const cookieJar = { value: '' };
@@ -78,6 +79,7 @@ describe('Revlm.provisionalLogin (integration)', () => {
         provisionalAuthSecretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER as string,
         provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
         fetchImpl: createFetchWithCookies(fetch),
+        sessionId: SESSION_ID,
       }
     );
     const res = await revlm.provisionalLogin(process.env.PROVISIONAL_AUTH_ID as string);
@@ -100,7 +102,7 @@ describe('Revlm.provisionalLogin (integration)', () => {
   });
 
   it('emulates Realm.App login/currentUser/allUsers and MongoDB service', async () => {
-    const app = new App(testEnv.serverUrl, { fetchImpl: createFetchWithCookies(fetch) });
+    const app = new App(testEnv.serverUrl, { fetchImpl: createFetchWithCookies(fetch), sessionId: SESSION_ID });
     const creds = Credentials.emailPassword(TEST_USER_ID, TEST_USER_PASSWORD);
     const user = await app.logIn(creds);
 

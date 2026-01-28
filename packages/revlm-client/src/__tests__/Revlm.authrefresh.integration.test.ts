@@ -20,6 +20,7 @@ jest.setTimeout(20000);
 
 const TEST_AUTH_ID = `auth-refresh-${Date.now()}`;
 const TEST_PASSWORD = 'auth-refresh-pass';
+const SESSION_ID = 'test-session';
 
 function createFetchWithCookies(baseFetch: typeof fetch) {
   const cookieJar = { value: '' };
@@ -53,7 +54,7 @@ describe('Revlm autoRefreshOn401 (integration)', () => {
         usersDbName: ensureDefined(process.env.USERS_DB_NAME, 'USERS_DB_NAME is required'),
         usersCollectionName: ensureDefined(process.env.USERS_COLLECTION_NAME, 'USERS_COLLECTION_NAME is required'),
         jwtSecret: ensureDefined(process.env.JWT_SECRET, 'JWT_SECRET is required'),
-        jwtExpiresIn: '1s',
+        jwtExpiresIn: 1,
         refreshWindowSec: 10,
         provisionalLoginEnabled: true,
         provisionalAuthId: ensureDefined(process.env.PROVISIONAL_AUTH_ID, 'PROVISIONAL_AUTH_ID is required'),
@@ -90,6 +91,7 @@ describe('Revlm autoRefreshOn401 (integration)', () => {
     const client = new Revlm(testEnv.serverUrl, {
       fetchImpl: createFetchWithCookies(fetch),
       autoRefreshOn401: true,
+      sessionId: SESSION_ID,
     });
 
     const loginRes = await client.login(TEST_AUTH_ID, TEST_PASSWORD);

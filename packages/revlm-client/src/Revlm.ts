@@ -15,6 +15,13 @@ const LOG_LEVEL_RANK: Record<LogLevel, number> = {
   debug: 3,
 };
 
+const SESSION_HEADER_NAME = 'x-revlm-session-id';
+
+export type CookieStore = {
+  getCookieHeader: (url: string) => string | undefined | Promise<string | undefined>;
+  setCookie: (url: string, setCookieHeader: string) => void | Promise<void>;
+};
+
 function normalizeLogLevel(value?: string): LogLevel {
   if (!value) return 'info';
   const lowered = value.toLowerCase();
@@ -29,6 +36,31 @@ function normalizeLogLevel(value?: string): LogLevel {
 function maskSecret(value?: string): string | undefined {
   if (!value) return undefined;
   return `<...:${value.length}>`;
+}
+
+function generateSessionId(): string {
+  try {
+    const globalCrypto = (globalThis as any)?.crypto;
+    if (globalCrypto && typeof globalCrypto.randomUUID === 'function') {
+      return globalCrypto.randomUUID();
+    }
+  } catch {
+    // ignore: fallback below
+  }
+  try {
+    const nodeCrypto = require('crypto');
+    if (nodeCrypto?.randomUUID) return nodeCrypto.randomUUID();
+    if (nodeCrypto?.randomBytes) return nodeCrypto.randomBytes(16).toString('hex');
+  } catch {
+    // ignore: fallback below
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getSetCookieHeaders(res: Response): string[] {
+  const raw = (res.headers as any)?.getSetCookie?.() ?? res.headers.get('set-cookie');
+  if (!raw) return [];
+  return Array.isArray(raw) ? raw : [raw];
 }
 
 function getRevlmClientVersion(): string {
@@ -55,6 +87,9 @@ export type RevlmOptions = {
   autoRefreshOn401?: boolean;
   // log level for init log output: 'error' | 'warn' | 'info' | 'debug'
   logLevel?: LogLevel;
+  sessionId?: string;
+  sessionIdProvider?: () => string | Promise<string>;
+  cookieStore?: CookieStore;
 };
 
 export type RevlmResponse<T = any> = {
@@ -79,6 +114,9 @@ export default class Revlm {
   private cookieCheckPromise?: Promise<void>;
   private logLevel: LogLevel;
   private refreshPromise: Promise<RevlmResponse> | undefined;
+  private sessionId: string | undefined;
+  private sessionIdProvider: (() => string | Promise<string>) | undefined;
+  private cookieStore: CookieStore | undefined;
 
   constructor(baseUrl: string, opts: RevlmOptions = {}) {
     if (!baseUrl) throw new Error('baseUrl is required');
@@ -91,6 +129,9 @@ export default class Revlm {
     this.autoSetToken = opts.autoSetToken ?? true;
     this.autoRefreshOn401 = opts.autoRefreshOn401 || false;
     this.logLevel = normalizeLogLevel(opts.logLevel);
+    this.sessionId = opts.sessionId;
+    this.sessionIdProvider = opts.sessionIdProvider;
+    this.cookieStore = opts.cookieStore;
 
     if (!this.fetchImpl) {
       throw new Error('No fetch implementation available. Provide fetchImpl in options or run in Node 18+ with global fetch.');
@@ -108,6 +149,35 @@ export default class Revlm {
       fetchImplProvided: !!opts.fetchImpl,
       logLevel: this.logLevel,
     });
+  }
+
+  private async resolveSessionId(): Promise<string | undefined> {
+    if (this.sessionId) return this.sessionId;
+    if (this.sessionIdProvider) {
+      const provided = await this.sessionIdProvider();
+      if (provided) {
+        this.sessionId = provided;
+        return provided;
+      }
+    }
+    this.sessionId = generateSessionId();
+    return this.sessionId;
+  }
+
+  private async applyCookieStore(headers: Record<string, string>, url: string): Promise<void> {
+    const existing = (headers as any).cookie || (headers as any).Cookie;
+    if (!this.cookieStore || existing) return;
+    const cookieHeader = await this.cookieStore.getCookieHeader(url);
+    if (cookieHeader) headers.cookie = cookieHeader;
+  }
+
+  private async storeSetCookies(res: Response, url: string): Promise<void> {
+    if (!this.cookieStore) return;
+    const setCookies = getSetCookieHeaders(res);
+    if (!setCookies.length) return;
+    for (const setCookie of setCookies) {
+      await this.cookieStore.setCookie(url, setCookie);
+    }
   }
 
   private canLog(level: LogLevel): boolean {
@@ -285,6 +355,9 @@ export default class Revlm {
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
     const hasBody = body !== undefined;
     const headers = this.makeHeaders(hasBody);
+    const sessionId = await this.resolveSessionId();
+    if (sessionId) headers[SESSION_HEADER_NAME] = sessionId;
+    await this.applyCookieStore(headers, url);
     let serializedBody: string | undefined;
     if (hasBody) {
       serializedBody = EJSON.stringify(body);
@@ -296,6 +369,7 @@ export default class Revlm {
         headers: signedHeaders,
         body: serializedBody,
       } as any);
+      await this.storeSetCookies(res, signedUrl);
       const parsed = await this.parseResponse(res);
       const out: RevlmResponse = (parsed && typeof parsed === 'object') ? parsed : { ok: res.ok, result: parsed };
       out.status = res.status;
