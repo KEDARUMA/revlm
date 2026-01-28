@@ -66,6 +66,7 @@ export interface ServerConfig {
   jwtExpiresIn?: number;
   refreshWindowSec?: number;
   refreshSecretTtlSec?: number;
+  refreshSessionTtlSec?: number;
   port: number;
   refreshSecretSigningKey: string;
   logLevel?: string;
@@ -149,6 +150,11 @@ const REFRESH_COOKIE_NAME = 'revlm_refresh';
 const COOKIE_CHECK_TTL_SEC = 120;
 const COOKIE_CHECK_NAME = 'revlm_cookie_check';
 const SESSION_HEADER_NAME = 'x-revlm-session-id';
+const REFRESH_SESSIONS_COLLECTION = 'revlm_refresh_sessions';
+const REFRESH_SESSION_TTL_DEFAULT_SEC = 60 * 60 * 24 * 30;
+const REFRESH_SESSION_PRUNE_MIN_MS = 60 * 1000; // run at least every 60 seconds
+const REFRESH_SESSION_PRUNE_MAX_MS = 60 * 60 * 1000; // but no more than once per hour
+let refreshSessionTtlSec = REFRESH_SESSION_TTL_DEFAULT_SEC;
 const ERROR_CODES = {
   authFailed: 4349,
   tokenExpired: 40101,
@@ -176,66 +182,91 @@ function normalizeSessionId(value?: string): string | undefined {
   return trimmed.length ? trimmed : undefined;
 }
 
-function resolveSessionId(req: Request, payloadSid?: string): string {
-  const headerSid = normalizeSessionId(req.headers?.[SESSION_HEADER_NAME] as string | undefined);
-  const payloadSessionId = normalizeSessionId(payloadSid);
-  return headerSid || payloadSessionId || 'legacy';
+let refreshSessionPruneTimer: NodeJS.Timeout | undefined;
+
+function getRefreshSessionPruneIntervalMs(): number {
+  return Math.max(
+    REFRESH_SESSION_PRUNE_MIN_MS,
+    Math.min(refreshSessionTtlSec * 1000, REFRESH_SESSION_PRUNE_MAX_MS)
+  );
+}
+
+export async function pruneExpiredRefreshSessions(): Promise<void> {
+  try {
+    const col = getClient().db(USERS_DB_NAME as string).collection(REFRESH_SESSIONS_COLLECTION);
+    const cutoff = new Date(Date.now() - refreshSessionTtlSec * 1000);
+    const result = await col.deleteMany({ updatedAt: { $lt: cutoff } });
+    if (shouldLog('debug')) {
+      console.log('pruneExpiredRefreshSessions removed', result?.deletedCount, 'sessions older than', cutoff.toISOString());
+    }
+  } catch (err: any) {
+    console.log('pruneExpiredRefreshSessions error - name:', err && err.name, 'message:', err && err.message);
+  }
+}
+
+function scheduleRefreshSessionPrune() {
+  if (refreshSessionPruneTimer) return;
+  refreshSessionPruneTimer = setInterval(() => {
+    pruneExpiredRefreshSessions().catch((err: any) => {
+      console.log('scheduled refresh session prune error - name:', err && err.name, 'message:', err && err.message);
+    });
+  }, getRefreshSessionPruneIntervalMs());
+  if (typeof refreshSessionPruneTimer.unref === 'function') {
+    refreshSessionPruneTimer.unref();
+  }
+}
+
+function clearRefreshSessionPrune() {
+  if (!refreshSessionPruneTimer) return;
+  clearInterval(refreshSessionPruneTimer);
+  refreshSessionPruneTimer = undefined;
+}
+
+// Require sessionId in header for strict session scoping.
+// セッションを厳格に扱うためヘッダのsessionIdを必須にする。
+function requireSessionId(req: Request): string | undefined {
+  return normalizeSessionId(req.headers?.[SESSION_HEADER_NAME] as string | undefined);
 }
 
 type RefreshSession = {
+  userId: ObjectIdType;
   sessionId: string;
   refreshSecretHash: string;
   refreshSecretIssuedAt: number;
-  createdAt?: number;
-  updatedAt?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
-function resolveRefreshSession(user: any, sessionId: string): RefreshSession | null {
-  if (!user) return null;
-  const sessions = Array.isArray(user.refreshSessions) ? user.refreshSessions : [];
-  const match = sessions.find((s: any) => s && s.sessionId === sessionId);
-  if (match) return match as RefreshSession;
-  if (sessionId === 'legacy' && user.refreshSecretHash && user.refreshSecretIssuedAt) {
-    return {
-      sessionId,
-      refreshSecretHash: user.refreshSecretHash,
-      refreshSecretIssuedAt: user.refreshSecretIssuedAt,
-    };
-  }
-  return null;
+// Load refresh session from dedicated collection.
+// 専用コレクションからrefresh sessionを取得する。
+async function getRefreshSession(userId: ObjectIdType, sessionId: string): Promise<RefreshSession | null> {
+  const oid = toObjectId(userId);
+  if (!oid) return null;
+  const col = getClient().db(USERS_DB_NAME as string).collection(REFRESH_SESSIONS_COLLECTION);
+  return await col.findOne({ userId: oid, sessionId }) as RefreshSession | null;
 }
 
 async function upsertRefreshSession(userId: ObjectIdType, sessionId: string, refreshSecretHash: string, issuedAt: number) {
   const oid = toObjectId(userId);
   if (!oid) throw new Error('invalid_user_id');
-  const userCol = getClient().db(USERS_DB_NAME as string).collection(USERS_COLLECTION as string);
-  const updatedAt = issuedAt;
-  const result = await userCol.updateOne(
-    { _id: oid, 'refreshSessions.sessionId': sessionId },
+  const col = getClient().db(USERS_DB_NAME as string).collection(REFRESH_SESSIONS_COLLECTION);
+  const now = new Date();
+  await col.updateOne(
+    { userId: oid, sessionId },
     {
       $set: {
-        'refreshSessions.$.refreshSecretHash': refreshSecretHash,
-        'refreshSessions.$.refreshSecretIssuedAt': issuedAt,
-        'refreshSessions.$.updatedAt': updatedAt,
+        refreshSecretHash,
+        refreshSecretIssuedAt: issuedAt,
+        updatedAt: now,
       },
-    }
+      $setOnInsert: {
+        userId: oid,
+        sessionId,
+        createdAt: now,
+      },
+    },
+    { upsert: true }
   );
-  if (!result.matchedCount) {
-    await userCol.updateOne(
-      { _id: oid },
-      {
-        $push: {
-          refreshSessions: {
-            sessionId,
-            refreshSecretHash,
-            refreshSecretIssuedAt: issuedAt,
-            createdAt: issuedAt,
-            updatedAt,
-          },
-        },
-      } as any
-    );
-  }
 }
 
 async function issueRefreshSecret(userId: ObjectIdType, sessionId: string): Promise<{ signed: string; issuedAt: number }> {
@@ -250,10 +281,6 @@ async function issueRefreshSecret(userId: ObjectIdType, sessionId: string): Prom
   );
   const refreshSecretHash = await bcrypt.hash(secret, 10);
   await upsertRefreshSession(userId, sessionId, refreshSecretHash, issuedAt);
-  if (sessionId === 'legacy') {
-    const userCol = getClient().db(USERS_DB_NAME as string).collection(USERS_COLLECTION as string);
-    await userCol.updateOne({ _id: oid }, { $set: { refreshSecretHash, refreshSecretIssuedAt: issuedAt } });
-  }
   return { signed, issuedAt };
 }
 
@@ -283,7 +310,9 @@ function setCookieCheck(res: Response, value: string) {
   });
 }
 
-function ensureRefreshSecretValid(user: any, payload: any, sessionId: string) {
+// Validate refresh secret against stored session record.
+// 保存済みセッションとrefresh secretの整合性を検証する。
+function ensureRefreshSecretValid(session: RefreshSession | null, payload: any) {
   const now = Math.floor(Date.now() / 1000);
   const rawTtlSec = REFRESH_SECRET_TTL_SEC ?? REFRESH_SECRET_TTL_DEFAULT_SEC;
   const ttlSec = rawTtlSec === 0 ? REFRESH_SECRET_TTL_ZERO_SEC : rawTtlSec;
@@ -293,7 +322,6 @@ function ensureRefreshSecretValid(user: any, payload: any, sessionId: string) {
   if (now - payload.iat > ttlSec) {
     throw new Error('refresh_secret_expired');
   }
-  const session = resolveRefreshSession(user, sessionId);
   if (!session || !session.refreshSecretHash || session.refreshSecretIssuedAt !== payload.iat) {
     throw new Error('refresh_secret_mismatch');
   }
@@ -395,6 +423,13 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
       if (!decoded || !decoded._id) return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
       if (decoded.userType === 'provisional') return sendResponse(req, res, { ok: false, reason: 'provisional_forbidden', code: ERROR_CODES.provisionalForbidden }, 403);
 
+      // Require sessionId header for strict session scoping.
+      // 厳格なセッション管理のためsessionIdヘッダを必須にする。
+      const headerSessionId = requireSessionId(req);
+      if (!headerSessionId) {
+        return sendResponse(req, res, { ok: false, reason: 'missing_session_id', code: ERROR_CODES.invalidToken }, 400);
+      }
+
       const cookies = parseCookies(req);
       const refreshCookie = cookies[REFRESH_COOKIE_NAME];
       if (!refreshCookie) return sendResponse(req, res, { ok: false, reason: 'no_refresh_secret', code: ERROR_CODES.invalidToken }, 401);
@@ -406,12 +441,14 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
         console.log('refresh-token refresh secret verify error - name:', _e && _e.name, 'message:', _e && _e.message);
         return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.invalidToken }, 403);
       }
-      const headerSessionId = normalizeSessionId(req.headers?.[SESSION_HEADER_NAME] as string | undefined);
       const payloadSessionId = normalizeSessionId(refreshPayload?.sid);
-      if (headerSessionId && payloadSessionId && headerSessionId !== payloadSessionId) {
+      if (!payloadSessionId) {
+        return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.invalidToken }, 403);
+      }
+      if (headerSessionId !== payloadSessionId) {
         return sendResponse(req, res, { ok: false, reason: 'refresh_secret_mismatch', code: ERROR_CODES.invalidToken }, 403);
       }
-      const sessionId = headerSessionId || payloadSessionId || 'legacy';
+      const sessionId = headerSessionId;
 
       const userCol = getClient().db(USERS_DB_NAME as string).collection(USERS_COLLECTION as string);
       const subId = toObjectId(refreshPayload.sub);
@@ -420,8 +457,10 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
       if (!user) return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
       if (String(decoded._id) !== String(user._id)) return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
 
+      let session: RefreshSession | null = null;
       try {
-        ensureRefreshSecretValid(user, refreshPayload, sessionId);
+        session = await getRefreshSession(user._id, sessionId);
+        ensureRefreshSecretValid(session, refreshPayload);
       } catch (err: any) {
         const reason = err?.message || 'refresh_secret_invalid';
         const status = reason === 'refresh_secret_expired' ? 401 : 403;
@@ -429,7 +468,6 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
         return sendResponse(req, res, { ok: false, reason, code }, status);
       }
 
-      const session = resolveRefreshSession(user, sessionId);
       const match = await bcrypt.compare(refreshPayload.rs, session?.refreshSecretHash || '');
       if (!match) return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.invalidToken }, 403);
 
@@ -537,6 +575,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
   REFRESH_WINDOW_SEC = merged.refreshWindowSec!;
   REFRESH_SECRET_TTL_SEC = merged.refreshSecretTtlSec ?? REFRESH_SECRET_TTL_DEFAULT_SEC;
   REFRESH_SECRET_SIGNING_KEY = merged.refreshSecretSigningKey;
+  refreshSessionTtlSec = merged.refreshSessionTtlSec ?? REFRESH_SESSION_TTL_DEFAULT_SEC;
   LOG_LEVEL = normalizeLogLevel(merged.logLevel);
 
   if (PROVISIONAL_LOGIN_ENABLED) {
@@ -552,6 +591,16 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
     await c.db().admin().ping();
     // connection ok
     console.log('MongoDB connected');
+    // Ensure TTL index for refresh session cleanup.
+    // refresh sessionのTTLインデックスを作成する。
+    try {
+      const refreshCol = c.db(USERS_DB_NAME as string).collection(REFRESH_SESSIONS_COLLECTION);
+      await refreshCol.createIndex({ updatedAt: 1 }, { expireAfterSeconds: refreshSessionTtlSec });
+    } catch (indexErr: any) {
+      console.log('refresh session index error - Error name:', indexErr && indexErr.name, 'Error message:', indexErr && indexErr.message);
+    }
+    await pruneExpiredRefreshSessions();
+    scheduleRefreshSessionPrune();
   } catch (err: any) {
     console.log('MongoDB connection error - Error name:', err && err.name, 'Error message:', err && err.message);
     if (err && err.stack) console.log(err.stack);
@@ -641,6 +690,12 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
     const { authId, password } = req.body;
     if (!authId || !password) return sendResponse(req, res, { ok: false, error: 'authId and password are required' }, 400);
     try {
+      // Require sessionId to create a session-scoped refresh secret.
+      // セッション単位のrefresh secret作成のためsessionIdを必須にする。
+      const sessionId = requireSessionId(req);
+      if (!sessionId) {
+        return sendResponse(req, res, { ok: false, reason: 'missing_session_id', code: ERROR_CODES.invalidToken }, 400);
+      }
       const userCol = getClient().db(USERS_DB_NAME as string).collection(USERS_COLLECTION as string);
       const user = await userCol.findOne({ authId });
       if (!user || !user.passwordHash) return sendResponse(req, res, { ok: false, error: 'Authentication failed', code: ERROR_CODES.authFailed }, 401);
@@ -648,7 +703,6 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
       if (!valid) return sendResponse(req, res, { ok: false, error: 'Authentication failed', code: ERROR_CODES.authFailed }, 401);
       const { _id, userType, roles } = user;
       const token = jwt.sign({ _id, userType, roles }, JWT_SECRET as string, { expiresIn: JWT_EXPIRES_IN as number });
-      const sessionId = resolveSessionId(req);
       const refreshSecret = await issueRefreshSecret(_id, sessionId);
       setRefreshCookie(res, refreshSecret.signed);
       try {
@@ -692,6 +746,26 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
     try {
       const _db = getClient().db(db);
       if (!_db) return sendResponse(req, res, { ok: false, error: 'Invalid db parameter' }, 400);
+
+      // Block writes to refresh session storage from gate.
+      // refresh session用コレクションへの書き込みを禁止する。
+      if (collection === REFRESH_SESSIONS_COLLECTION) {
+        const writeMethods = new Set([
+          'insertOne',
+          'insertMany',
+          'updateOne',
+          'updateMany',
+          'replaceOne',
+          'findOneAndUpdate',
+          'findOneAndReplace',
+          'deleteOne',
+          'deleteMany',
+          'drop',
+        ]);
+        if (writeMethods.has(method)) {
+          return sendResponse(req, res, { ok: false, error: 'forbidden_collection' }, 403);
+        }
+      }
 
       const col = _db.collection(collection);
       if (!col) return sendResponse(req, res, { ok: false, error: 'Invalid collection parameter' }, 400);

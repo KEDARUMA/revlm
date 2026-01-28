@@ -10,12 +10,15 @@ revlm-server を起動、仮ログイン→ユーザ登録→全コレクショ�
 
 import dotenv from 'dotenv';
 import path from 'path';
+import { ObjectId } from 'bson';
 import {
   setupTestEnvironment,
   cleanupTestEnvironment,
-  SetupTestEnvironmentResult
+  SetupTestEnvironmentResult,
+  createTestUser,
+  cleanupTestUser,
 } from '@kedaruma/revlm-server/__tests__/setupTestMongo';
-import Revlm from '../Revlm';
+import Revlm, { RevlmOptions } from '../Revlm';
 
 dotenv.config({ path: path.join(__dirname, 'test.env') });
 
@@ -27,6 +30,8 @@ jest.setTimeout(120000);
 const TEST_DB = 'testdb';
 const COLL_NAME = 'testcoll';
 const SESSION_ID = 'test-session';
+const SHORT_TTL_SEC = 2;
+const MULTI_SESSION_IDS = ['client-multi-1', 'client-multi-2', 'client-multi-3', 'client-multi-4'];
 
 function createFetchWithCookies(baseFetch: typeof fetch) {
   const cookieJar = { value: '' };
@@ -44,6 +49,17 @@ function createFetchWithCookies(baseFetch: typeof fetch) {
     if (cookieValue) cookieJar.value = cookieValue.split(';')[0];
     return res;
   };
+}
+
+function createClientForSession(serverUrl: string, sessionId: string, opts: Partial<RevlmOptions> = {}) {
+  return new Revlm(serverUrl, {
+    provisionalEnabled: true,
+    provisionalAuthSecretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER as string,
+    provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
+    fetchImpl: createFetchWithCookies(fetch),
+    sessionId,
+    ...opts,
+  });
 }
 
 describe('RevlmCollection (integration)', () => {
@@ -232,5 +248,148 @@ describe('RevlmCollection (integration)', () => {
     // テストユーザーを削除
     const delRes = await v.deleteUser({ authId: newAuthId });
     expect(delRes.ok).toBe(true);
+  });
+
+  it('allows multiple clients with distinct sessions to run concurrent queries', async () => {
+    const multiAuthId = `multi-client-${Date.now()}`;
+    const multiPassword = `pw-${Math.random().toString(36).slice(2, 10)}`;
+    const registerRes = await v.registerUser({ authId: multiAuthId, userType: 'user', roles: [] }, multiPassword);
+    if (!registerRes.ok) {
+      throw new Error('registerUser failed: ' + JSON.stringify(registerRes));
+    }
+
+    const multiClients = MULTI_SESSION_IDS.map((sessionId) => createClientForSession(testEnv.serverUrl, sessionId));
+    await Promise.all(
+      multiClients.map((client, index) => client.login(multiAuthId, multiPassword).then((res) => {
+        if (!res.ok) throw new Error(`login failed for session ${MULTI_SESSION_IDS[index]}: ${JSON.stringify(res)}`);
+      }))
+    );
+
+    await Promise.all(
+      multiClients.map((client, index) =>
+        client.revlmGate({
+          db: TEST_DB,
+          collection: COLL_NAME,
+          method: 'insertOne',
+          document: {
+            name: `multi-session-${MULTI_SESSION_IDS[index]}`,
+            sessionIndex: index,
+            marker: Date.now(),
+          },
+        })
+      )
+    );
+
+    const results = await Promise.all(
+      multiClients.map((client, index) =>
+        client.revlmGate({
+          db: TEST_DB,
+          collection: COLL_NAME,
+          method: 'findOne',
+          filter: { name: `multi-session-${MULTI_SESSION_IDS[index]}` },
+        })
+      )
+    );
+
+    results.forEach((res, index) => {
+      expect(res.ok).toBe(true);
+      expect(res.status).toBe(200);
+      expect(res.result).toBeDefined();
+      const entry = res.result as any;
+      expect(entry.sessionIndex).toBe(index);
+      expect(entry.name).toBe(`multi-session-${MULTI_SESSION_IDS[index]}`);
+    });
+  });
+
+  it('handles concurrent refresh-token requests where only the first succeeds', async () => {
+    const localEnv = await setupTestEnvironment({
+      serverConfig: {
+        mongoUri: process.env.MONGO_URI as string,
+        usersDbName: process.env.USERS_DB_NAME as string,
+        usersCollectionName: process.env.USERS_COLLECTION_NAME as string,
+        jwtSecret: process.env.JWT_SECRET as string,
+        jwtExpiresIn: 1,
+        refreshWindowSec: 10,
+        provisionalLoginEnabled: true,
+        provisionalAuthId: process.env.PROVISIONAL_AUTH_ID as string,
+        provisionalAuthSecretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER as string,
+        provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
+        refreshSecretSigningKey: process.env.REFRESH_SECRET_SIGNING_KEY as string,
+        refreshSessionTtlSec: SHORT_TTL_SEC,
+        port: 0,
+      },
+    });
+    const authId = `refresh-parallel-${Date.now()}`;
+    const password = `pw-${Math.random().toString(36).slice(2, 10)}`;
+    const userDoc = {
+      _id: new ObjectId(),
+      authId,
+      userType: 'user',
+      roles: [],
+    };
+    try {
+      await createTestUser({
+        serverUrl: localEnv.serverUrl,
+        user: userDoc,
+        password,
+        provisionalAuthId: process.env.PROVISIONAL_AUTH_ID as string,
+        provisionalAuthSecretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER as string,
+        provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
+      });
+    const sharedSessionId = 'refresh-shared-session';
+    const clients = MULTI_SESSION_IDS.map(() =>
+      createClientForSession(localEnv.serverUrl, sharedSessionId, { autoRefreshOn401: false })
+    );
+      await Promise.all(clients.map((client) => client.login(authId, password)));
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const refreshResults = await Promise.all(clients.map((client) => client.refreshToken()));
+      const successCount = refreshResults.filter((res) => res.ok).length;
+      expect(successCount).toBe(1);
+      const failureResults = refreshResults.filter((res) => !res.ok);
+      failureResults.forEach((res) => {
+        const reason = (res as any).reason || (res as any).error;
+        expect(['refresh_secret_invalid', 'refresh_secret_mismatch', 'refresh_window_exceeded']).toContain(reason);
+      });
+
+      await Promise.all(clients.map((client) => client.login(authId, password)));
+      const writeResults = await Promise.all(
+        clients.map((client, index) =>
+          client.revlmGate({
+            db: TEST_DB,
+            collection: COLL_NAME,
+            method: 'insertOne',
+            document: {
+              name: `concurrent-refresh-${index}`,
+              refreshed: true,
+              sessionIndex: index,
+            },
+          })
+        )
+      );
+      writeResults.forEach((res, index) => {
+        expect(res.ok).toBe(true);
+        expect(res.status).toBe(200);
+      });
+
+      const readResults = await Promise.all(
+        clients.map((client, index) =>
+          client.revlmGate({
+            db: TEST_DB,
+            collection: COLL_NAME,
+            method: 'findOne',
+            filter: { name: `concurrent-refresh-${index}` },
+          })
+        )
+      );
+      readResults.forEach((res, index) => {
+        expect(res.ok).toBe(true);
+        expect(res.status).toBe(200);
+        expect(res.result).toBeDefined();
+        expect((res.result as any).sessionIndex).toBe(index);
+      });
+    } finally {
+      await cleanupTestUser(authId);
+      await cleanupTestEnvironment(localEnv);
+    }
   });
 });

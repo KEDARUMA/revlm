@@ -14,8 +14,6 @@ export interface UserBase extends MongoDocBase {
   passwordHash?: string;
   userType: UserType;
   roles?: string[];
-  refreshSecretHash?: string;
-  refreshSecretIssuedAt?: number;
 }
 
 export interface User extends UserBase {}

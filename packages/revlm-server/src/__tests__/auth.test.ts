@@ -30,6 +30,7 @@ const USERS_COLLECTION_NAME = ensureDefined(process.env.USERS_COLLECTION_NAME, '
 const PROVISIONAL_AUTH_DOMAIN = ensureDefined(process.env.PROVISIONAL_AUTH_DOMAIN);
 const PROVISIONAL_AUTH_SECRET_MASTER = ensureDefined(process.env.PROVISIONAL_AUTH_SECRET_MASTER);
 const PROVISIONAL_AUTH_ID = ensureDefined(process.env.PROVISIONAL_AUTH_ID);
+const SESSION_ID = 'test-session';
 
 // Dummy authentication information used in the test
 // テストで利用するダミー認証情報
@@ -140,6 +141,7 @@ describe('Auth API Integration', () => {
     const loginBody = { authId: testAuthId as string, password: testPassword };
     const loginRes = await request(serverUrl)
       .post('/login')
+      .set('x-revlm-session-id', SESSION_ID)
       .send(loginBody);
     const loginBodyParsed = parseBody(loginRes);
     const token = loginBodyParsed.token;
@@ -172,6 +174,7 @@ describe('Auth API Integration', () => {
     const loginBody = { authId: testAuthId as string, password: testPassword };
     const loginRes = await request(serverUrl)
       .post('/login')
+      .set('x-revlm-session-id', SESSION_ID)
       .send(loginBody);
     const loginBodyParsed = parseBody(loginRes);
     const token = loginBodyParsed.token;

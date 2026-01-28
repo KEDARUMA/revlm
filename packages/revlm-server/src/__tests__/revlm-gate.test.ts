@@ -29,6 +29,7 @@ const USERS_COLLECTION_NAME = ensureDefined(process.env.USERS_COLLECTION_NAME, '
 const PROVISIONAL_AUTH_DOMAIN = ensureDefined(process.env.PROVISIONAL_AUTH_DOMAIN);
 const PROVISIONAL_AUTH_SECRET_MASTER = ensureDefined(process.env.PROVISIONAL_AUTH_SECRET_MASTER);
 const PROVISIONAL_AUTH_ID = ensureDefined(process.env.PROVISIONAL_AUTH_ID);
+const SESSION_ID = 'test-session';
 
 let testEnv: SetupTestEnvironmentResult;
 let serverUrl: string;
@@ -61,6 +62,7 @@ const testUser: User = {
   roles: ['gate'],
 };
 const testCollection = `gate_test_${Date.now()}`;
+const MULTI_SESSIONS = ['sess-1', 'sess-2', 'sess-3', 'sess-4'];
 
 beforeAll(async () => {
   // Start server + MongoDB (enable provisional login)
@@ -96,6 +98,7 @@ beforeAll(async () => {
   // ログインして JWT 取得
   const loginRes = await request(serverUrl)
     .post('/login')
+    .set('x-revlm-session-id', SESSION_ID)
     .send({ authId: testAuthId, password: testPassword });
   expect(loginRes.status).toBe(200);
   const loginBodyParsed = parseBody(loginRes);
@@ -125,6 +128,30 @@ async function gateCall(body: any) {
   const res = await request(serverUrl)
     .post('/revlm-gate')
     .set('X-Revlm-JWT', `Bearer ${token}`)
+    .send(body);
+  const parsed = parseBody(res);
+  return { res, body: parsed };
+}
+
+// Create a session-scoped token for concurrent queries.
+// 同一ユーザのセッション別トークンを発行する。
+async function loginWithSession(sessionId: string): Promise<string> {
+  const loginRes = await request(serverUrl)
+    .post('/login')
+    .set('x-revlm-session-id', sessionId)
+    .send({ authId: testAuthId, password: testPassword });
+  const parsed = parseBody(loginRes);
+  if (!parsed || !parsed.ok || !parsed.token) throw new Error('login failed for session: ' + sessionId);
+  return String(parsed.token);
+}
+
+// Call /revlm-gate with explicit sessionId + token.
+// sessionIdとtokenを指定して/revlm-gateを呼び出す。
+async function gateCallWithSession(body: any, tokenValue: string, sessionId: string) {
+  const res = await request(serverUrl)
+    .post('/revlm-gate')
+    .set('X-Revlm-JWT', `Bearer ${tokenValue}`)
+    .set('x-revlm-session-id', sessionId)
     .send(body);
   const parsed = parseBody(res);
   return { res, body: parsed };
@@ -345,5 +372,70 @@ describe('/revlm-gate Integration (excluding watch)', () => {
     expect(body.ok).toBe(false);
     // ステータスコードが 400 または 403 であることを確認
     expect([400, 403, 500]).toContain(res.status);
+  });
+
+  // 15) 同一ユーザの複数セッションで並列クエリが独立に成功する
+  it('multi-session concurrent queries return distinct results', async () => {
+    const tokens = await Promise.all(MULTI_SESSIONS.map((sid) => loginWithSession(sid)));
+    type MultiSessionQuery = {
+      sessionId: string;
+      token: string;
+      name: string;
+      value: number;
+    };
+    const values = [11, 22, 33, 44];
+    const queries: MultiSessionQuery[] = MULTI_SESSIONS.map((sessionId, index) => {
+      const tokenValue = tokens[index];
+      if (!tokenValue) throw new Error(`missing token for ${sessionId}`);
+      const value = values[index];
+      if (typeof value !== 'number') throw new Error(`missing value for session ${sessionId}`);
+      return {
+        sessionId,
+        token: tokenValue,
+        name: `ms-${index + 1}`,
+        value,
+      };
+    });
+
+    await Promise.all(queries.map(({ sessionId, token, name, value }) =>
+      gateCallWithSession(
+        {
+          db: USERS_DB_NAME,
+          collection: testCollection,
+          method: 'insertOne',
+          document: { name, value },
+        },
+        token,
+        sessionId
+      )
+    ));
+
+    const results = await Promise.all(queries.map(({ sessionId, token, name }) =>
+      gateCallWithSession(
+        {
+          db: USERS_DB_NAME,
+          collection: testCollection,
+          method: 'find',
+          filter: { name },
+        },
+        token,
+        sessionId
+      )
+    ));
+
+    results.forEach(({ res, body }, index) => {
+      expect(res.status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(Array.isArray(body.result)).toBe(true);
+      expect(body.result.length).toBe(1);
+      const entry = body.result[0];
+      expect(entry).toBeDefined();
+      const query = queries[index];
+      expect(query).toBeDefined();
+      if (entry && query) {
+        expect(query.name).toBe(entry.name);
+        expect(query.value).toBe(entry.value);
+      }
+    });
   });
 });
