@@ -1,0 +1,20 @@
+{
+  "name": "@kedaruma/example-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/start.ts",
+    "start-with-opts": "tsx src/start.ts --",
+    "stop": "tsx src/stop.ts",
+    "test": "node -e \"console.log('example-server: no unit tests (use root pnpm test for workspace tests, or pnpm test:npm for published npm integration).')\""
+  },
+  "dependencies": {
+    "@kedaruma/revlm-server": "workspace:*",
+    "dotenv": "^17.2.3",
+    "mongodb-memory-server": "^10.2.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.8.1"
+  }
+}

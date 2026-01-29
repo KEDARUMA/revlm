@@ -6,6 +6,7 @@
 // - setupTestEnvironment でサーバ + （インメモリ）MongoDB を起動
 import request from 'supertest';
 import { ObjectId, EJSON } from 'bson';
+import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
 import path from 'path';
 import { ensureDefined } from '@kedaruma/revlm-shared/utils/asserts';
@@ -17,6 +18,7 @@ import {
   cleanupTestUser,
   cleanupTestEnvironment,
 } from '@kedaruma/revlm-server/__tests__/setupTestMongo';
+import { pruneExpiredRefreshSessions } from '@kedaruma/revlm-server/server';
 
 // Load environment variables
 // 環境変数を読み込む
@@ -63,6 +65,9 @@ const testUser: User = {
 };
 const testCollection = `gate_test_${Date.now()}`;
 const MULTI_SESSIONS = ['sess-1', 'sess-2', 'sess-3', 'sess-4'];
+const REFRESH_COOKIE_NAME = 'revlm_refresh';
+const REFRESH_SESSIONS_COLLECTION = 'revlm_refresh_sessions';
+const TTL_TEST_SESSION = 'prune-test-session';
 
 beforeAll(async () => {
   // Start server + MongoDB (enable provisional login)
@@ -79,6 +84,8 @@ beforeAll(async () => {
       provisionalAuthDomain: PROVISIONAL_AUTH_DOMAIN,
       refreshSecretSigningKey: ensureDefined(process.env.REFRESH_SECRET_SIGNING_KEY, 'REFRESH_SECRET_SIGNING_KEY is required'),
       port: Number(process.env.PORT),
+      jwtExpiresIn: 2,
+      refreshSessionTtlSec: 1,
     },
   });
   serverUrl = testEnv.serverUrl;
@@ -133,16 +140,37 @@ async function gateCall(body: any) {
   return { res, body: parsed };
 }
 
-// Create a session-scoped token for concurrent queries.
-// 同一ユーザのセッション別トークンを発行する。
-async function loginWithSession(sessionId: string): Promise<string> {
+function extractCookieValue(res: request.Response, name: string): string | undefined {
+  const raw = res.headers['set-cookie'];
+  if (!raw) return undefined;
+  const cookies = Array.isArray(raw) ? raw : [raw];
+  for (const cookie of cookies) {
+    const tokenPart = cookie.split(';')[0];
+    const sep = tokenPart.indexOf('=');
+    if (sep === -1) continue;
+    const key = tokenPart.slice(0, sep).trim();
+    if (key !== name) continue;
+    return tokenPart.slice(sep + 1);
+  }
+  return undefined;
+}
+
+// Create a session-scoped token and refresh secret for concurrent queries.
+// 同一ユーザのセッション別トークンとリフレッシュシークレットを発行する。
+async function loginWithSession(sessionId: string): Promise<{ token: string; refreshCookie: string; sessionId: string }> {
   const loginRes = await request(serverUrl)
     .post('/login')
     .set('x-revlm-session-id', sessionId)
     .send({ authId: testAuthId, password: testPassword });
   const parsed = parseBody(loginRes);
   if (!parsed || !parsed.ok || !parsed.token) throw new Error('login failed for session: ' + sessionId);
-  return String(parsed.token);
+  const refreshCookie = extractCookieValue(loginRes, REFRESH_COOKIE_NAME);
+  if (!refreshCookie) throw new Error('refresh cookie missing for session: ' + sessionId);
+  return {
+    token: String(parsed.token),
+    refreshCookie,
+    sessionId,
+  };
 }
 
 // Call /revlm-gate with explicit sessionId + token.
@@ -155,6 +183,17 @@ async function gateCallWithSession(body: any, tokenValue: string, sessionId: str
     .send(body);
   const parsed = parseBody(res);
   return { res, body: parsed };
+}
+
+async function refreshSessionToken(sessionId: string, tokenValue: string, refreshCookie: string) {
+  const res = await request(serverUrl)
+    .post('/refresh-token')
+    .set('authorization', `Bearer ${tokenValue}`)
+    .set('x-revlm-session-id', sessionId)
+    .set('Cookie', `${REFRESH_COOKIE_NAME}=${refreshCookie}`)
+    .send();
+  const parsed = parseBody(res);
+  return { res, body: parsed, sessionId };
 }
 
 // /revlm-gate 統合テスト（watch を除く）
@@ -376,7 +415,8 @@ describe('/revlm-gate Integration (excluding watch)', () => {
 
   // 15) 同一ユーザの複数セッションで並列クエリが独立に成功する
   it('multi-session concurrent queries return distinct results', async () => {
-    const tokens = await Promise.all(MULTI_SESSIONS.map((sid) => loginWithSession(sid)));
+    const sessions = await Promise.all(MULTI_SESSIONS.map((sid) => loginWithSession(sid)));
+    const tokens = sessions.map((sessionData) => sessionData.token);
     type MultiSessionQuery = {
       sessionId: string;
       token: string;
@@ -437,5 +477,45 @@ describe('/revlm-gate Integration (excluding watch)', () => {
         expect(query.value).toBe(entry.value);
       }
     });
+  });
+});
+
+describe('refresh token session handling', () => {
+  it('allows only one refresh success per session while mismatching stale requests', async () => {
+    const sessionPayload = await loginWithSession('concurrent-refresh-session');
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    const first = await refreshSessionToken(sessionPayload.sessionId, sessionPayload.token, sessionPayload.refreshCookie);
+    expect(first.res.status).toBe(200);
+    const staleResults = await Promise.all(Array.from({ length: 3 }, () =>
+      refreshSessionToken(sessionPayload.sessionId, sessionPayload.token, sessionPayload.refreshCookie)
+    ));
+    const mismatches = staleResults.filter((result) =>
+      result.res.status === 403 && result.body && result.body.reason === 'refresh_secret_mismatch'
+    );
+    expect(mismatches.length).toBe(3);
+    const successToken = first.body && first.body.token;
+    expect(successToken).toBeTruthy();
+    const { res: gateRes, body: gateBody } = await gateCallWithSession({
+      db: USERS_DB_NAME,
+      collection: testCollection,
+      method: 'find',
+      filter: { name: 'gateA' },
+    }, successToken as string, sessionPayload.sessionId);
+    expect(gateRes.status).toBe(200);
+    expect(gateBody.ok).toBe(true);
+  });
+
+  it('prunes expired refresh sessions via TTL cleanup', async () => {
+    const { sessionId } = await loginWithSession(TTL_TEST_SESSION);
+    const mongoClient = await MongoClient.connect(testEnv.uri);
+    const sessionCol = mongoClient.db(USERS_DB_NAME).collection(REFRESH_SESSIONS_COLLECTION);
+    await sessionCol.updateOne(
+      { sessionId },
+      { $set: { updatedAt: new Date(Date.now() - 60000) } }
+    );
+    await pruneExpiredRefreshSessions();
+    const remaining = await sessionCol.findOne({ sessionId });
+    expect(remaining).toBeNull();
+    await mongoClient.close();
   });
 });

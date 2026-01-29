@@ -1,0 +1,17 @@
+{
+  "name": "@kedaruma/example-cli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "tsx src/test.ts",
+    "test:npm": "tsx src/test-npm.ts"
+  },
+  "dependencies": {
+    "@kedaruma/revlm-client": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.8.1"
+  }
+}

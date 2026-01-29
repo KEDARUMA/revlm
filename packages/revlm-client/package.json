@@ -1,6 +1,6 @@
 {
   "name": "@kedaruma/revlm-client",
-  "version": "1.0.53",
+  "version": "1.0.54",
   "private": false,
   "description": "TypeScript client SDK for talking to the Revlm server replacement for MongoDB Realm.",
   "keywords": [
@@ -26,6 +26,16 @@
         "default": "./dist/index.js"
       }
     },
+    "./revlm-compat": {
+      "import": {
+        "types": "./dist/revlm-compat.d.mts",
+        "default": "./dist/revlm-compat.mjs"
+      },
+      "require": {
+        "types": "./dist/revlm-compat.d.ts",
+        "default": "./dist/revlm-compat.js"
+      }
+    },
     "./rn-setup": {
       "import": {
         "types": "./dist/rn-setup.d.mts",
@@ -46,7 +56,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/rn-setup.ts --format cjs,esm --dts --tsconfig tsconfig.build.json",
+    "build": "tsup src/index.ts src/revlm-compat.ts src/rn-setup.ts --format cjs,esm --dts --tsconfig tsconfig.build.json",
     "clean": "rm -rf dist node_modules kedaruma-revlm-client-*.tgz",
     "test": "pnpm exec jest --config ../../jest.config.cjs packages/revlm-client/src/__tests__/ --runInBand --watchman=false --verbose"
   },
