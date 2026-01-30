@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/main.ts",
+    "demo": "tsx src/demo.ts",
     "test": "tsx src/test.ts",
     "test:npm": "tsx src/test-npm.ts"
   },

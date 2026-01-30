@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
-import { runExampleFlow } from './run';
+import { runExampleFlow } from "./run.js";
 
 // Track child process + assigned port.
 // 子プロセスと割当ポートの保持。

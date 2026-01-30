@@ -11,6 +11,11 @@ dist/
 packages/*/*.tgz
 *.tgz
 
+# Example server local data/cache (do not commit)
+# サンプルサーバのローカルデータ/キャッシュ（コミットしない）
+packages/example-server/.cache/
+packages/example-server/.data/
+
 # Logs
 logs/
 *.log

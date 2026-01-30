@@ -9,12 +9,12 @@ async function run() {
     // Why PID-based stop:
     // - `pnpm start` runs in a separate process.
     // - We need a stable way to locate and stop that process from another shell/test.
-    // - start.ts writes `.example-server.pid` for this purpose.
+    // - demo-test-start.ts writes `.example-server.pid` for this purpose.
     //
     // PIDで停止する理由:
     // - `pnpm start` は別プロセスで常駐する。
     // - 別シェル/テストから停止するにはプロセス特定手段が必要。
-    // - start.ts が `.example-server.pid` を書き出してそれを実現する。
+    // - demo-test-start.ts が `.example-server.pid` を書き出してそれを実現する。
     const pidFile = process.env.EXAMPLE_SERVER_PID_FILE
       ? path.resolve(process.cwd(), process.env.EXAMPLE_SERVER_PID_FILE)
       : path.resolve(process.cwd(), '.example-server.pid');
@@ -30,8 +30,8 @@ async function run() {
       process.exit(1);
     }
     try {
-      // SIGTERM is preferred for graceful shutdown (start.ts traps it).
-      // SIGTERMで停止（start.ts側でgraceful shutdownを行う）。
+      // SIGTERM is preferred for graceful shutdown (demo-test-start.ts traps it).
+      // SIGTERMで停止（demo-test-start.ts側でgraceful shutdownを行う）。
       process.kill(pid, 'SIGTERM');
     } catch (error: any) {
       if (error && error.code === 'ESRCH') {

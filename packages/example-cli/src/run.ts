@@ -14,6 +14,36 @@ type FlowOptions = {
   provisionalAuthSecretMaster: string;
   provisionalAuthDomain: string;
   usersDbName: string;
+
+  // If true, the client automatically refreshes on 401 and retries the original request.
+  // true の場合、401時に自動で refresh して元リクエストをリトライする。
+  //
+  // This is useful for long-running demo flows (e.g. printing reports).
+  // デモでレポート出力など長時間処理を行う場合に便利。
+  autoRefreshOn401?: boolean;
+
+  // Optional fixed account for demo-only CLI runs.
+  // デモ専用の固定アカウント（任意）。
+  //
+  // If provided, the flow skips "register user" and only performs:
+  // login -> wait -> refreshToken -> data ops.
+  //
+  // 指定されている場合、ユーザ登録は行わず、
+  // login -> wait -> refreshToken -> DB操作 のみ実行する。
+  demoUser?: { authId: string; password: string };
+  // If true, skip the refresh-token step (demo mode).
+  // true の場合、refresh-token の検証をスキップする（デモ用）。
+  skipRefresh?: boolean;
+
+  // Optional hook for CLI-only workflows (used by `src/demo.ts`).
+  // CLI用の任意フック（`src/demo.ts` から使用）。
+  //
+  // This allows the demo CLI to run additional queries after a successful refresh,
+  // without impacting the automated test harness (`src/test.ts`).
+  //
+  // refresh 成功後に追加クエリを実行するためのフック。
+  // 自動テスト（`src/test.ts`）には影響しないよう任意にしている。
+  afterRefresh?: (ctx: { revlm: Revlm; usersDbName: string }) => Promise<void>;
 };
 
 // Simple wait helper for token expiration timing.
@@ -46,7 +76,9 @@ function createInMemoryCookieStore(): CookieStore {
         .join('; ');
     },
     setCookie: (_url, setCookieHeader) => {
+      if (!setCookieHeader) return;
       const [cookiePair] = setCookieHeader.split(';');
+      if (!cookiePair) return;
       const sep = cookiePair.indexOf('=');
       if (sep === -1) return;
       const name = cookiePair.slice(0, sep).trim();
@@ -78,42 +110,57 @@ export async function runExampleFlow(options: FlowOptions) {
     provisionalAuthSecretMaster: options.provisionalAuthSecretMaster,
     provisionalAuthDomain: options.provisionalAuthDomain,
     autoSetToken: true,
-    autoRefreshOn401: false,
+    autoRefreshOn401: !!options.autoRefreshOn401,
     sessionId: options.sessionId,
     cookieStore,
     logLevel: 'info',
   });
 
-  // Create a fresh user for demonstration.
-  // デモ用の新規ユーザを作成。
-  const authId = `example-cli-${Date.now()}`;
-  const user = {
-    authId,
-    userType: 'staff',
-    roles: ['example'],
-    name: 'Example CLI',
-  };
-  log('user prepared', { authId, sessionId: options.sessionId });
-
-  // 1) provisional login (to call registerUser).
-  // 1) 仮ログイン（registerUserのため）。
+  // Resolve which account to use.
+  // 使用するアカウントを決める。
   //
-  // This step obtains a temporary token that is allowed to call /registerUser.
-  // このステップで /registerUser 実行可能な一時トークンを取得する。
-  log('provisionalLogin start');
-  const provisionalRes = await revlm.provisionalLogin(options.provisionalAuthId);
-  if (!provisionalRes.ok) throw new Error(`provisional login failed: ${provisionalRes.error || provisionalRes.reason}`);
-  log('provisionalLogin ok');
-
-  // 2) register user (creates a real account).
-  // 2) ユーザ登録（本アカウント作成）。
+  // - Test harness (`pnpm test`) uses a new account each run (registers it).
+  // - Manual demo (`pnpm start`) can use a fixed account (demo/demo-pass) created by example-server.
   //
-  // We create a new user per run so the demo is independent and repeatable.
-  // 毎回新規ユーザを作ることで、デモを独立・再実行可能にする。
-  log('registerUser start');
-  const registerRes = await revlm.registerUser(user, DEFAULT_PASSWORD);
-  if (!registerRes.ok) throw new Error(`registerUser failed: ${registerRes.error || registerRes.reason}`);
-  log('registerUser ok');
+  // - テスト（`pnpm test`）は毎回新規アカウントを作って使用する。
+  // - 手動デモ（`pnpm start`）は example-server が用意する固定アカウントを使える。
+  const useDemo = !!options.demoUser;
+  const authId = useDemo ? options.demoUser!.authId : `example-cli-${Date.now()}`;
+  const password = useDemo ? options.demoUser!.password : DEFAULT_PASSWORD;
+
+  if (!useDemo) {
+    // Create a fresh user for demonstration.
+    // デモ用の新規ユーザを作成。
+    const user = {
+      authId,
+      userType: 'staff',
+      roles: ['example'],
+      name: 'Example CLI',
+    };
+    log('user prepared', { authId, sessionId: options.sessionId });
+
+    // 1) provisional login (to call registerUser).
+    // 1) 仮ログイン（registerUserのため）。
+    //
+    // This step obtains a temporary token that is allowed to call /registerUser.
+    // このステップで /registerUser 実行可能な一時トークンを取得する。
+    log('provisionalLogin start');
+    const provisionalRes = await revlm.provisionalLogin(options.provisionalAuthId);
+    if (!provisionalRes.ok) throw new Error(`provisional login failed: ${provisionalRes.error || provisionalRes.reason}`);
+    log('provisionalLogin ok');
+
+    // 2) register user (creates a real account).
+    // 2) ユーザ登録（本アカウント作成）。
+    //
+    // We create a new user per run so the demo is independent and repeatable.
+    // 毎回新規ユーザを作ることで、デモを独立・再実行可能にする。
+    log('registerUser start');
+    const registerRes = await revlm.registerUser(user, DEFAULT_PASSWORD);
+    if (!registerRes.ok) throw new Error(`registerUser failed: ${registerRes.error || registerRes.reason}`);
+    log('registerUser ok');
+  } else {
+    log('demo user selected (registerUser skipped)', { authId, sessionId: options.sessionId });
+  }
 
   // 3) login (acquire JWT).
   // 3) ログイン（JWT取得）。
@@ -123,39 +170,49 @@ export async function runExampleFlow(options: FlowOptions) {
   // ログイン後、サーバは refresh cookie もセットする。
   // cookieStore が Set-Cookie からそれを保持する。
   log('login start');
-  const loginRes = await revlm.login(authId, DEFAULT_PASSWORD);
+  const loginRes = await revlm.login(authId, password);
   if (!loginRes.ok) throw new Error(`login failed: ${loginRes.error || loginRes.reason}`);
   log('login ok');
 
-  // Wait for token expiration before refresh.
-  // トークン期限切れを待ってからリフレッシュする。
-  //
-  // Why 2.5s:
-  // - The server (spawned by example-cli test) configures jwtExpiresIn=2 seconds.
-  // - Waiting slightly longer ensures the access token is expired.
-  //
-  // 2.5秒待つ理由:
-  // - example-cli のテストでは server を jwtExpiresIn=2秒で起動している。
-  // - 少し長めに待って確実に期限切れにする。
-  log('sleep (waiting for token expiry)', { ms: 2500 });
-  await sleep(2500);
+  if (!options.skipRefresh) {
+    // Wait for token expiration before refresh.
+    // トークン期限切れを待ってからリフレッシュする。
+    //
+    // Why 2.5s:
+    // - The server (spawned by example-cli test) configures jwtExpiresIn=2 seconds.
+    // - Waiting slightly longer ensures the access token is expired.
+    //
+    // 2.5秒待つ理由:
+    // - example-cli のテストでは server を jwtExpiresIn=2秒で起動している。
+    // - 少し長めに待って確実に期限切れにする。
+    log('sleep (waiting for token expiry)', { ms: 2500 });
+    await sleep(2500);
 
-  // 4) refresh token (uses cookie store).
-  // 4) トークン更新（CookieStore利用）。
-  //
-  // refreshToken:
-  // - Sends the expired access token in Authorization header.
-  // - Sends the refresh secret cookie from cookieStore in Cookie header.
-  // - Receives a new access token (+ new refresh cookie) on success.
-  //
-  // refreshToken の挙動:
-  // - 期限切れアクセストークンを Authorization で送る。
-  // - cookieStore の refresh cookie を Cookie で送る。
-  // - 成功時に新アクセストークン（+新 refresh cookie）を得る。
-  log('refreshToken start');
-  const refreshRes = await revlm.refreshToken();
-  if (!refreshRes.ok) throw new Error(`refresh failed: ${refreshRes.error || refreshRes.reason}`);
-  log('refreshToken ok');
+    // 4) refresh token (uses cookie store).
+    // 4) トークン更新（CookieStore利用）。
+    //
+    // refreshToken:
+    // - Sends the expired access token in Authorization header.
+    // - Sends the refresh secret cookie from cookieStore in Cookie header.
+    // - Receives a new access token (+ new refresh cookie) on success.
+    //
+    // refreshToken の挙動:
+    // - 期限切れアクセストークンを Authorization で送る。
+    // - cookieStore の refresh cookie を Cookie で送る。
+    // - 成功時に新アクセストークン（+新 refresh cookie）を得る。
+    log('refreshToken start');
+    const refreshRes = await revlm.refreshToken();
+    if (!refreshRes.ok) throw new Error(`refresh failed: ${refreshRes.error || refreshRes.reason}`);
+    log('refreshToken ok');
+  } else {
+    log('refreshToken skipped (demo mode)');
+  }
+
+  // Optional post-refresh hook (used by `pnpm start`).
+  // refresh 後の任意フック（`pnpm start` 用）。
+  if (options.afterRefresh) {
+    await options.afterRefresh({ revlm, usersDbName: options.usersDbName });
+  }
 
   // 5) Collection access (Realm-like syntax).
   // 5) コレクションアクセス（Realm 風の書き味）。

@@ -4,14 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/start.ts",
-    "start-with-opts": "tsx src/start.ts --",
+    "start": "node node_modules/@kedaruma/revlm-server/dist/start.js",
+    "demo": "tsx src/demo-test-start.ts",
+    "start-with-opts": "tsx src/demo-test-start.ts --",
     "stop": "tsx src/stop.ts",
+    "reset-data": "tsx src/reset-data.ts",
     "test": "node -e \"console.log('example-server: no unit tests (use root pnpm test for workspace tests, or pnpm test:npm for published npm integration).')\""
   },
   "dependencies": {
     "@kedaruma/revlm-server": "workspace:*",
+    "@kedaruma/revlm-shared": "workspace:*",
+    "csv-parse": "^6.1.0",
     "dotenv": "^17.2.3",
+    "mongodb": "^6.20.0",
     "mongodb-memory-server": "^10.2.1"
   },
   "devDependencies": {
