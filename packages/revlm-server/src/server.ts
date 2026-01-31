@@ -14,7 +14,19 @@ import http from "http";
 const pkg = require('../package.json');
 
 const app = express();
-app.use(cors());
+const CORS_ORIGIN_RAW = process.env.CORS_ORIGIN;
+const CORS_ORIGINS = CORS_ORIGIN_RAW
+  ? CORS_ORIGIN_RAW.split(',').map((origin) => origin.trim()).filter((origin) => origin.length > 0)
+  : undefined;
+if (CORS_ORIGINS && CORS_ORIGINS.length > 0) {
+  // Allow credentialed CORS requests for specific origins (comma-separated).
+  // credential付きCORSを特定オリジンのみ許可（カンマ区切り）。
+  app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
+} else {
+  // Default CORS (no credentials, allow all origins).
+  // 既定のCORS（credentialなし、全オリジン許可）。
+  app.use(cors());
+}
 const captureRaw = (req: any, _res: any, buf: Buffer) => {
   if (buf && buf.length) {
     (req as any)._rawBody = buf;
