@@ -12,8 +12,8 @@
     "test": "node -e \"console.log('example-server: no unit tests (use root pnpm test for workspace tests, or pnpm test:npm for published npm integration).')\""
   },
   "dependencies": {
-    "@kedaruma/revlm-server": "workspace:*",
-    "@kedaruma/revlm-shared": "workspace:*",
+    "@kedaruma/revlm-server": "latest",
+    "@kedaruma/revlm-shared": "latest",
     "csv-parse": "^6.1.0",
     "dotenv": "^17.2.3",
     "mongodb": "^6.20.0",

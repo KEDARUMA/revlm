@@ -78,8 +78,11 @@ importers:
   packages/example-cli:
     dependencies:
       '@kedaruma/revlm-client':
-        specifier: workspace:*
-        version: link:../revlm-client
+        specifier: latest
+        version: 1.0.54
+      dotenv:
+        specifier: ^17.2.3
+        version: 17.2.3
     devDependencies:
       tsx:
         specifier: ^4.8.1
@@ -88,11 +91,11 @@ importers:
   packages/example-server:
     dependencies:
       '@kedaruma/revlm-server':
-        specifier: workspace:*
-        version: link:../revlm-server
+        specifier: latest
+        version: 1.0.45(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
       '@kedaruma/revlm-shared':
-        specifier: workspace:*
-        version: link:../revlm-shared
+        specifier: latest
+        version: 1.0.9
       csv-parse:
         specifier: ^6.1.0
         version: 6.1.0
@@ -789,6 +792,15 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
+
+  '@kedaruma/revlm-client@1.0.54':
+    resolution: {integrity: sha512-4+INq2LKjTnhE+UpRSmcSY9kj9vVOjGEsZLrJV3Om+r7N+2pkG5GFmiQ7+DTy64CP8rFtl7WYFZ4WdR5luQOKQ==}
+
+  '@kedaruma/revlm-server@1.0.45':
+    resolution: {integrity: sha512-hsjcJ4o7CuwEDe3YnuaEe3AZAbIaktYU80rxScRkg9Dj9IX+1nhg39kTbYsMpeP58Hc/DtbEZaYvmh8yxpMxwQ==}
+
+  '@kedaruma/revlm-shared@1.0.9':
+    resolution: {integrity: sha512-V2bTtREykfu/KCcqcJOQtiZGRGTwExbiKXpxna9v67uQR+Tsox4QHXOHbZTuu6283KU7xlkhw/rINgTViGmnag==}
 
   '@mongodb-js/saslprep@1.3.2':
     resolution: {integrity: sha512-QgA5AySqB27cGTXBFmnpifAi7HxoGUeezwo6p9dI03MuDB6Pp33zgclqVb6oVK3j6I9Vesg0+oojW2XxB59SGg==}
@@ -4410,6 +4422,36 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@kedaruma/revlm-client@1.0.54':
+    dependencies:
+      '@kedaruma/revlm-shared': 1.0.9
+      bson: 6.10.4
+      dotenv: 17.2.3
+
+  '@kedaruma/revlm-server@1.0.45(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
+    dependencies:
+      '@kedaruma/revlm-shared': 1.0.9
+      bcrypt: 6.0.0
+      bson: 6.10.4
+      cors: 2.8.5
+      dotenv: 17.2.3
+      express: 5.1.0
+      jsonwebtoken: 9.0.2
+      mongodb: 6.20.0(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-providers'
+      - '@mongodb-js/zstd'
+      - gcp-metadata
+      - kerberos
+      - mongodb-client-encryption
+      - snappy
+      - socks
+      - supports-color
+
+  '@kedaruma/revlm-shared@1.0.9':
+    dependencies:
+      bson: 6.10.4
 
   '@mongodb-js/saslprep@1.3.2':
     dependencies:

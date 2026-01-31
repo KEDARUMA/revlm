@@ -3,16 +3,6 @@ import type { MoviesCombined } from "./types/moviesCombinedTypes.js";
 
 // CLI movie report for the `movies_combined` dataset.
 // `movies_combined` データセット向けのCLIレポート。
-//
-// This module is intentionally "demo friendly":
-// - colorful headings (ANSI) + emojis
-// - small, fixed output sizes (top N) to keep logs readable
-// - minimal assumptions about the dataset quality
-//
-// このモジュールはデモ用途に寄せている:
-// - ANSIカラー + 絵文字で見出しを目立たせる
-// - 出力量は固定の上位N件に絞る（ログが読める範囲にする）
-// - データ品質（yearが空等）に強く依存しない
 
 type MoviesDoc = MoviesCombined & { _id: unknown };
 
@@ -42,8 +32,6 @@ function truncate40(s: unknown): string {
 }
 
 function coerceYear(v: unknown): number | null {
-  // Be permissive: dataset year might be "", "1999", 1999, etc.
-  // データのyearは "", "1999", 1999 など揺れがあり得るので寛容に扱う。
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string") {
     const n = Number(v.trim());
@@ -53,8 +41,6 @@ function coerceYear(v: unknown): number | null {
 }
 
 function yearExpr() {
-  // Convert `year` to int for numeric range queries.
-  // `year` を数値化して範囲条件に使えるようにする。
   return {
     $convert: {
       input: "$year",
@@ -91,22 +77,6 @@ async function countInYearWindow(
     { $count: "n" },
   ])) as any[];
   return Number(rows?.[0]?.n || 0);
-}
-
-async function listRecentMovies(
-  coll: RevlmCompat.Services.MongoDB.MongoDBCollection<MoviesDoc>,
-  fromYear: number,
-  toYear: number,
-  limit: number
-): Promise<MoviesDoc[]> {
-  const rows = (await coll.aggregate([
-    { $addFields: { yearNum: yearExpr() } },
-    { $match: { yearNum: { $gte: fromYear, $lte: toYear } } },
-    { $sort: { yearNum: -1, title: 1 } },
-    { $limit: limit },
-    { $project: { year: 1, title: 1, description: 1 } },
-  ])) as any[];
-  return (rows || []) as MoviesDoc[];
 }
 
 async function countForYear(
@@ -288,7 +258,5 @@ export async function printMoviesReport(
         `[text search failed] ${it.label}: ${e?.message || e}. If this is about missing text index, run: pnpm --filter @kedaruma/example-server reset-data`
       );
     }
-    // eslint-disable-next-line no-console
-    console.log("");
   }
 }

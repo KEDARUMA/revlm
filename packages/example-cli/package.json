@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "demo": "tsx src/demo.ts",
-    "test": "tsx src/test.ts",
-    "test:npm": "tsx src/test-npm.ts"
+    "test": "tsx src/test.ts"
   },
   "dependencies": {
-    "@kedaruma/revlm-client": "workspace:*"
+    "@kedaruma/revlm-client": "latest",
+    "dotenv": "^17.2.3"
   },
   "devDependencies": {
     "tsx": "^4.8.1"
