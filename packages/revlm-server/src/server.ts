@@ -298,7 +298,7 @@ async function issueRefreshSecret(userId: ObjectIdType, sessionId: string): Prom
 
 function setRefreshCookie(res: Response, signed: string) {
   // HttpOnly Secure SameSite=Lax cookie scoped to /refresh-token
-  const secure = process.env.NODE_ENV !== 'test';
+  const secure = process.env.COOKIE_SECURE !== 'false' && process.env.NODE_ENV !== 'test';
   const rawTtlSec = REFRESH_SECRET_TTL_SEC ?? REFRESH_SECRET_TTL_DEFAULT_SEC;
   const ttlSec = rawTtlSec === 0 ? REFRESH_SECRET_TTL_ZERO_SEC : rawTtlSec;
   (res as any).cookie(REFRESH_COOKIE_NAME, signed, {
@@ -312,7 +312,7 @@ function setRefreshCookie(res: Response, signed: string) {
 
 function setCookieCheck(res: Response, value: string) {
   // Short-lived HttpOnly cookie for /cookie-check verification.
-  const secure = process.env.NODE_ENV !== 'test';
+  const secure = process.env.COOKIE_SECURE !== 'false' && process.env.NODE_ENV !== 'test';
   (res as any).cookie(COOKIE_CHECK_NAME, value, {
     httpOnly: true,
     secure,
