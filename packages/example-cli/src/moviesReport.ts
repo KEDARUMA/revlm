@@ -5,6 +5,10 @@ import type { MoviesCombined } from "./types/moviesCombinedTypes.js";
 // `movies_combined` データセット向けのCLIレポート。
 
 type MoviesDoc = MoviesCombined & { _id: unknown };
+type YearRangeRow = { minYear?: number | null; maxYear?: number | null };
+type CountRow = { n?: number };
+type TopValueRow = { _id?: string | null; n?: number };
+type TextSearchRow = MoviesDoc & { score?: number };
 
 // Simple ANSI helpers.
 // 簡易ANSIヘルパー。
@@ -58,7 +62,7 @@ async function loadYearRange(
     { $addFields: { yearNum: yearExpr() } },
     { $match: { yearNum: { $ne: null } } },
     { $group: { _id: null, minYear: { $min: "$yearNum" }, maxYear: { $max: "$yearNum" } } },
-  ])) as any[];
+  ])) as YearRangeRow[];
   const first = rows && rows[0] ? rows[0] : null;
   return {
     minYear: coerceYear(first?.minYear),
@@ -75,7 +79,7 @@ async function countInYearWindow(
     { $addFields: { yearNum: yearExpr() } },
     { $match: { yearNum: { $gte: fromYear, $lte: toYear } } },
     { $count: "n" },
-  ])) as any[];
+  ])) as CountRow[];
   return Number(rows?.[0]?.n || 0);
 }
 
@@ -87,7 +91,7 @@ async function countForYear(
     { $addFields: { yearNum: yearExpr() } },
     { $match: { yearNum: year } },
     { $count: "n" },
-  ])) as any[];
+  ])) as CountRow[];
   return Number(rows?.[0]?.n || 0);
 }
 
@@ -102,8 +106,8 @@ async function listMoviesForYear(
     { $sort: { title: 1 } },
     { $limit: limit },
     { $project: { year: 1, title: 1, description: 1 } },
-  ])) as any[];
-  return (rows || []) as MoviesDoc[];
+  ])) as MoviesDoc[];
+  return rows || [];
 }
 
 async function topValues(
@@ -116,9 +120,9 @@ async function topValues(
     { $group: { _id: `$${field}`, n: { $sum: 1 } } },
     { $sort: { n: -1 } },
     { $limit: limit },
-  ])) as any[];
+  ])) as TopValueRow[];
   return (rows || [])
-    .map((r: any) => ({ key: String(r?._id ?? ""), count: Number(r?.n || 0) }))
+    .map((r) => ({ key: String(r?._id ?? ""), count: Number(r?.n || 0) }))
     .filter((r) => r.key);
 }
 
@@ -134,8 +138,8 @@ async function topMoviesForValue(
     { $sort: { yearNum: -1, title: 1 } },
     { $limit: limit },
     { $project: { year: 1, title: 1, description: 1 } },
-  ])) as any[];
-  return (rows || []) as MoviesDoc[];
+  ])) as MoviesDoc[];
+  return rows || [];
 }
 
 async function textSearch(
@@ -149,8 +153,8 @@ async function textSearch(
     { $sort: { score: -1, yearNum: -1 } },
     { $limit: limit },
     { $project: { year: 1, title: 1, description: 1, score: 1 } },
-  ])) as any[];
-  return (rows || []) as MoviesDoc[];
+  ])) as TextSearchRow[];
+  return rows || [];
 }
 
 function printMovieList(rows: MoviesDoc[]) {
@@ -250,12 +254,13 @@ export async function printMoviesReport(
     try {
       const rows = await textSearch(coll, it.q, 10);
       printMovieList(rows);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // If the text index is missing, MongoDB will throw.
       // text index が無い場合などはMongoDBがエラーを返す。
+      const msg = e instanceof Error ? e.message : String(e);
       // eslint-disable-next-line no-console
       console.error(
-        `[text search failed] ${it.label}: ${e?.message || e}. If this is about missing text index, run: pnpm --filter @kedaruma/example-server reset-data`
+        `[text search failed] ${it.label}: ${msg}. If this is about missing text index, run: pnpm --filter @kedaruma/example-server reset-data`
       );
     }
   }
