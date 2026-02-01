@@ -3,15 +3,24 @@ import { User } from '@kedaruma/revlm-shared/models/user-types';
 import { AuthServer } from '@kedaruma/revlm-shared/auth-token';
 import type { MongoClient as MongoClientType } from 'mongodb';
 import crypto from 'crypto';
-const express = require('express');
-const cors = require('cors');
+import { readFileSync } from 'node:fs';
+import express from 'express';
+import cors from 'cors';
 import { MongoClient } from 'mongodb';
 import { ObjectId, EJSON } from 'bson';
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import type { ObjectId as ObjectIdType } from 'bson';
 import http from "http";
-const pkg = require('../package.json');
+const loadPackageJson = (): { version?: string } => {
+  try {
+    const raw = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
+    return JSON.parse(raw) as { version?: string };
+  } catch {
+    return {};
+  }
+};
+const pkg = loadPackageJson();
 
 const app = express();
 const CORS_ORIGIN_RAW = process.env.CORS_ORIGIN;

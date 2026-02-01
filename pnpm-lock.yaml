@@ -92,7 +92,7 @@ importers:
     dependencies:
       '@kedaruma/revlm-server':
         specifier: latest
-        version: 1.0.47(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
+        version: 1.0.50(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
       '@kedaruma/revlm-shared':
         specifier: latest
         version: 1.0.9
@@ -190,6 +190,9 @@ importers:
       '@types/bcrypt':
         specifier: ^5.0.2
         version: 5.0.2
+      '@types/cors':
+        specifier: ^2.8.18
+        version: 2.8.19
       mongodb-memory-server:
         specifier: ^8.12.2
         version: 8.16.1
@@ -871,8 +874,8 @@ packages:
   '@kedaruma/revlm-client@1.0.54':
     resolution: {integrity: sha512-4+INq2LKjTnhE+UpRSmcSY9kj9vVOjGEsZLrJV3Om+r7N+2pkG5GFmiQ7+DTy64CP8rFtl7WYFZ4WdR5luQOKQ==}
 
-  '@kedaruma/revlm-server@1.0.47':
-    resolution: {integrity: sha512-OScQx6Td72NBw3Oa2fNXNNfRsDDZahdwNTSjJELMhGplbgdw1U1PY649ufeq524t4ZY583Dh2NQtXwY/44CPlA==}
+  '@kedaruma/revlm-server@1.0.50':
+    resolution: {integrity: sha512-SV3CYysfNOEe3PS9Y2bw34eh3XcChZtxY/A2xHs/Fj6vKrl2mt7Gf4zo7tX118wGA0JeXw5jw6tSlC92LvVFHQ==}
 
   '@kedaruma/revlm-shared@1.0.9':
     resolution: {integrity: sha512-V2bTtREykfu/KCcqcJOQtiZGRGTwExbiKXpxna9v67uQR+Tsox4QHXOHbZTuu6283KU7xlkhw/rINgTViGmnag==}
@@ -1245,6 +1248,9 @@ packages:
 
   '@types/cookiejar@2.1.5':
     resolution: {integrity: sha512-he+DHOWReW0nghN24E1WUqM0efK4kI9oTqDm6XmK8ZPe2djZ90BSNdGnIyCLzCPw7/pogPlGbzI2wHGGmi4O/Q==}
+
+  '@types/cors@2.8.19':
+    resolution: {integrity: sha512-mFNylyeyqN93lfe/9CSxOGREz8cpzAhH+E93xJ4xWQf62V8sQ/24reV2nyzUWM6H6Xji+GGHpkbLe7pVoUEskg==}
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
@@ -4880,7 +4886,7 @@ snapshots:
       bson: 6.10.4
       dotenv: 17.2.3
 
-  '@kedaruma/revlm-server@1.0.47(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
+  '@kedaruma/revlm-server@1.0.50(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
     dependencies:
       '@kedaruma/revlm-shared': 1.0.9
       bcrypt: 6.0.0
@@ -5386,6 +5392,10 @@ snapshots:
       '@types/node': 24.9.1
 
   '@types/cookiejar@2.1.5': {}
+
+  '@types/cors@2.8.19':
+    dependencies:
+      '@types/node': 24.9.1
 
   '@types/deep-eql@4.0.2': {}
 

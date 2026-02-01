@@ -14,8 +14,8 @@ const loadCrypto = async () => {
       return await import('crypto');
     } catch {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        return require('react-native-quick-crypto');
+        const mod = await import('react-native-quick-crypto');
+        return (mod as { default?: unknown }).default ?? mod;
       } catch {
         throw new Error('crypto module not available (expected Node crypto or react-native-quick-crypto)');
       }

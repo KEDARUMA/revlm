@@ -1,12 +1,14 @@
 import { config as dotenvConfig } from 'dotenv';
 dotenvConfig();
-import { startServer, stopServer, ServerConfig, serverConfigDefaults } from './server';
+import { startServer, stopServer, ServerConfig, serverConfigDefaults } from './server.js';
+import { readFileSync } from 'node:fs';
 
 type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
 function getServerVersion(): string {
   try {
-    const pkg = require('../package.json');
+    const raw = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
+    const pkg = JSON.parse(raw) as { version?: string };
     if (pkg && typeof pkg.version === 'string') return pkg.version;
   } catch {
     // ignore: runtime may not expose package.json
