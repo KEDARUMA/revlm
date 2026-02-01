@@ -10,6 +10,8 @@ revlm-server を起動、仮ログイン→ユーザ登録→全コレクショ�
 
 import dotenv from 'dotenv';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { jest } from '@jest/globals';
 import { ObjectId } from 'bson';
 import {
   setupTestEnvironment,
@@ -19,6 +21,9 @@ import {
   cleanupTestUser,
 } from '@kedaruma/revlm-server/__tests__/setupTestMongo';
 import Revlm, { RevlmOptions } from '../Revlm';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, 'test.env') });
 
@@ -351,9 +356,12 @@ describe('RevlmCollection (integration)', () => {
         expect(['refresh_secret_invalid', 'refresh_secret_mismatch', 'refresh_window_exceeded']).toContain(reason);
       });
 
-      await Promise.all(clients.map((client) => client.login(authId, password)));
+      const recoveryClients = MULTI_SESSION_IDS.map((sessionId) =>
+        createClientForSession(localEnv.serverUrl, sessionId, { autoRefreshOn401: true })
+      );
+      await Promise.all(recoveryClients.map((client) => client.login(authId, password)));
       const writeResults = await Promise.all(
-        clients.map((client, index) =>
+        recoveryClients.map((client, index) =>
           client.revlmGate({
             db: TEST_DB,
             collection: COLL_NAME,
@@ -372,7 +380,7 @@ describe('RevlmCollection (integration)', () => {
       });
 
       const readResults = await Promise.all(
-        clients.map((client, index) =>
+        recoveryClients.map((client, index) =>
           client.revlmGate({
             db: TEST_DB,
             collection: COLL_NAME,

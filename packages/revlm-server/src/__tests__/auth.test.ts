@@ -11,11 +11,16 @@
 import request from 'supertest';
 import { ObjectId, EJSON } from 'bson';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { jest } from '@jest/globals';
 import { User } from '@kedaruma/revlm-shared/models/user-types';
 import { AuthClient } from '@kedaruma/revlm-shared/auth-token';
 import { ensureDefined } from '@kedaruma/revlm-shared/utils/asserts';
 import { SetupTestEnvironmentResult, setupTestEnvironment, createTestUser, cleanupTestUser, cleanupTestEnvironment } from '@kedaruma/revlm-server/__tests__/setupTestMongo';
 import path from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables (refer to .env) so that the necessary settings for the test are stored in process.env.
 // 環境変数を読み込む（.env を参照）テスト内で必要な設定が process.env に入る。

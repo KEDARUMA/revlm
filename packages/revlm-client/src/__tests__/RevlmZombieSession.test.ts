@@ -1,5 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { jest } from '@jest/globals';
 import { ObjectId } from 'bson';
 import Revlm from '../Revlm';
 import { ensureDefined } from '@kedaruma/revlm-shared/utils/asserts';
@@ -11,6 +13,9 @@ import {
   cleanupTestUser,
 } from '@kedaruma/revlm-server/__tests__/setupTestMongo';
 import { pruneExpiredRefreshSessions } from '@kedaruma/revlm-server/server';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, 'test.env') });
 

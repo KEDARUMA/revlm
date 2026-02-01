@@ -9,13 +9,18 @@
 
 import request from 'supertest';
 import { EJSON } from 'bson';
-const jwt = require('jsonwebtoken');
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { jest } from '@jest/globals';
+import jwt from 'jsonwebtoken';
 import { SetupTestEnvironmentResult, setupTestEnvironment, cleanupTestEnvironment } from './setupTestMongo';
 import { ensureDefined } from '@kedaruma/revlm-shared/utils/asserts';
 import path from 'path';
 import { MongoClient } from 'mongodb';
 import bcrypt from 'bcrypt';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables (refer to .env) so that the necessary settings for the test are stored in process.env.
 // 環境変数を読み込む（.env を参照）テスト内で必要な設定が process.env に入る。

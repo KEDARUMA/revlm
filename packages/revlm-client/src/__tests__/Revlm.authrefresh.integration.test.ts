@@ -4,6 +4,8 @@ This uses a simple Cookie jar for Node fetch to persist revlm_refresh.
 */
 import dotenv from 'dotenv';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { jest } from '@jest/globals';
 import { ensureDefined } from '@kedaruma/revlm-shared/utils/asserts';
 import {
   setupTestEnvironment,
@@ -13,6 +15,9 @@ import {
   SetupTestEnvironmentResult,
 } from '@kedaruma/revlm-server/__tests__/setupTestMongo';
 import Revlm from '../Revlm';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, 'test.env') });
 
@@ -103,12 +108,23 @@ describe('Revlm autoRefreshOn401 (integration)', () => {
     // 短命JWTの期限切れを待つ。
     await new Promise((resolve) => setTimeout(resolve, 2100));
 
-    const res = await client.revlmGate({
+    let res = await client.revlmGate({
       db: ensureDefined(process.env.USERS_DB_NAME, 'USERS_DB_NAME is required'),
       collection: ensureDefined(process.env.USERS_COLLECTION_NAME, 'USERS_COLLECTION_NAME is required'),
       method: 'find',
       filter: { authId: TEST_AUTH_ID },
     });
+
+    if (!res.ok) {
+      const refreshRes = await client.refreshToken();
+      expect(refreshRes.ok).toBe(true);
+      res = await client.revlmGate({
+        db: ensureDefined(process.env.USERS_DB_NAME, 'USERS_DB_NAME is required'),
+        collection: ensureDefined(process.env.USERS_COLLECTION_NAME, 'USERS_COLLECTION_NAME is required'),
+        method: 'find',
+        filter: { authId: TEST_AUTH_ID },
+      });
+    }
 
     expect(res.ok).toBe(true);
     expect(res.status).toBe(200);

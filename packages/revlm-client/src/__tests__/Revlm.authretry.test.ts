@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import Revlm from '../Revlm';
 
 type MockResponseInit = { status: number; body: any };

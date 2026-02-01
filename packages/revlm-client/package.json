@@ -58,7 +58,7 @@
   "scripts": {
     "build": "tsup src/index.ts src/revlm-compat.ts src/rn-setup.ts --format cjs,esm --dts --tsconfig tsconfig.build.json",
     "clean": "rm -rf dist node_modules kedaruma-revlm-client-*.tgz",
-    "test": "pnpm exec jest --config ../../jest.config.cjs packages/revlm-client/src/__tests__/ --runInBand --watchman=false --verbose"
+    "test": "NODE_OPTIONS=--experimental-vm-modules pnpm exec jest --config ../../jest.config.cjs packages/revlm-client/src/__tests__/ --runInBand --watchman=false --verbose"
   },
   "dependencies": {
     "@kedaruma/revlm-shared": "workspace:*",

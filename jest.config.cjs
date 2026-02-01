@@ -1,16 +1,21 @@
 const path = require('path');
 
 module.exports = {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
   testTimeout: 20000,
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', {
+      useESM: true,
       tsconfig: {
-        module: 'commonjs',
+        module: 'esnext',
         moduleResolution: 'nodenext',
         esModuleInterop: true,
-        isolatedModules: false
+        isolatedModules: true
+      },
+      diagnostics: {
+        ignoreCodes: [151002],
       }
     }],
   },
@@ -19,6 +24,7 @@ module.exports = {
   testPathIgnorePatterns: ['/node_modules/', '/packages/.*/dist/'],
   resolver: '<rootDir>/jest.resolver.cjs',
   moduleNameMapper: {
-    '^@kedaruma/([^/]+)(.*)$': '<rootDir>/packages/$1/src$2',
+    '^@kedaruma/([^/]+)$': '<rootDir>/packages/$1/src/index.ts',
+    '^@kedaruma/([^/]+)/(.+)$': '<rootDir>/packages/$1/src/$2.ts',
   },
 };

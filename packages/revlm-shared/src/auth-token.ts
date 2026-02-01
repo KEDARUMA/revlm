@@ -4,25 +4,12 @@
 // - payload: { ts, nonce, deviceId? } をJSONバイト化して暗号化
 // - AAD: "auth-v1|<authDomain>" でドメイン分離
 //
-// WebCrypto 依存を避け、Node 互換の crypto API で実装する（RN では react-native-quick-crypto を利用想定）
-let nodeCryptoPromise: Promise<any> | null = null;
-
-const loadCrypto = async () => {
-  if (nodeCryptoPromise) return nodeCryptoPromise;
-  nodeCryptoPromise = (async () => {
-    try {
-      return await import('crypto');
-    } catch {
-      try {
-        const mod = await import('react-native-quick-crypto');
-        return (mod as { default?: unknown }).default ?? mod;
-      } catch {
-        throw new Error('crypto module not available (expected Node crypto or react-native-quick-crypto)');
-      }
-    }
-  })();
-  return nodeCryptoPromise;
-};
+// Pure JS crypto (hkdf + aes-gcm) for consistent behavior across Node/Web/RN.
+// 純JS暗号（hkdf + aes-gcm）で、プラットフォーム差を避ける。
+import { gcm } from '@noble/ciphers/aes';
+import { hkdf } from '@noble/hashes/hkdf';
+import { sha256 } from '@noble/hashes/sha256';
+import { randomBytes } from '@noble/hashes/utils';
 
 // ========= Shared Utilities =========
 const textEncoder = new TextEncoder();
@@ -85,31 +72,18 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
 
 // ========= HKDF (Node crypto) =========
 async function hkdfDeriveKeyRaw(masterSecret: Uint8Array, info: Uint8Array, length = 32, salt?: Uint8Array): Promise<Uint8Array> {
-  const cryptoImpl = await loadCrypto();
-  const out = cryptoImpl.hkdfSync('sha256', Buffer.from(masterSecret), salt ? Buffer.from(salt) : Buffer.alloc(0), Buffer.from(info), length);
+  const out = hkdf(sha256, masterSecret, salt ?? new Uint8Array(), info, length);
   return new Uint8Array(out);
 }
 
 // ========= AES-GCM =========
 async function aesGcmEncrypt(kRaw: Uint8Array, iv: Uint8Array, plaintext: Uint8Array, aad?: Uint8Array): Promise<Uint8Array> {
-  const cryptoImpl = await loadCrypto();
-  const cipher = cryptoImpl.createCipheriv('aes-256-gcm', Buffer.from(kRaw), Buffer.from(iv), { authTagLength: 16 });
-  if (aad) cipher.setAAD(Buffer.from(aad));
-  const enc = Buffer.concat([cipher.update(Buffer.from(plaintext)), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return new Uint8Array(Buffer.concat([enc, tag]));
+  const cipher = gcm(kRaw, iv, aad);
+  return cipher.encrypt(plaintext);
 }
 async function aesGcmDecrypt(kRaw: Uint8Array, iv: Uint8Array, ciphertextAndTag: Uint8Array, aad?: Uint8Array): Promise<Uint8Array> {
-  const cryptoImpl = await loadCrypto();
-  if (ciphertextAndTag.length < 16) throw new Error('ciphertext too short');
-  const tagStart = ciphertextAndTag.length - 16;
-  const ct = ciphertextAndTag.slice(0, tagStart);
-  const tag = ciphertextAndTag.slice(tagStart);
-  const decipher = cryptoImpl.createDecipheriv('aes-256-gcm', Buffer.from(kRaw), Buffer.from(iv), { authTagLength: 16 });
-  if (aad) decipher.setAAD(Buffer.from(aad));
-  decipher.setAuthTag(Buffer.from(tag));
-  const dec = Buffer.concat([decipher.update(Buffer.from(ct)), decipher.final()]);
-  return new Uint8Array(dec);
+  const cipher = gcm(kRaw, iv, aad);
+  return cipher.decrypt(ciphertextAndTag);
 }
 
 // ========= Payload codec (JSON; サイズ小ならこれで十分。CBORに替えてもOK) =========
@@ -132,10 +106,9 @@ export class AuthClient {
   async producePassword(deviceId?: string): Promise<string> {
     const master = textEncoder.encode(this.secretMaster);
     const key = await hkdfDeriveKeyRaw(master, this.hkdfInfo, 32);
-    const cryptoImpl = await loadCrypto();
-    const iv = new Uint8Array(cryptoImpl.randomBytes(12));
+    const iv = randomBytes(12);
     const ts = Math.floor(Date.now() / 1000);
-    const nonceBytes = new Uint8Array(cryptoImpl.randomBytes(16));
+    const nonceBytes = randomBytes(16);
     const nonce = b64urlEncode(nonceBytes);
     const payload: Payload = (typeof deviceId === 'string') ? { ts, nonce, deviceId } : { ts, nonce };
     const aad = this.hkdfInfo;

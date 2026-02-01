@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@kedaruma/revlm-client": "latest",
+    "buffer": "^6.0.3",
     "vue": "^3.5.22",
     "vue-router": "^4.6.3"
   },

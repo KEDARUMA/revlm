@@ -11,6 +11,8 @@ verifyToken で有効を確認、仮アカウントのトークン refreshToken 
 
 import dotenv from 'dotenv';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { jest } from '@jest/globals';
 import {
   setupTestEnvironment,
   cleanupTestEnvironment,
@@ -19,6 +21,9 @@ import {
   cleanupTestUser
 } from '@kedaruma/revlm-server/__tests__/setupTestMongo';
 import Revlm, { App, Credentials } from '../Revlm';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const TEST_USER_ID = 'test'
 const TEST_USER_PASSWORD = 'test'

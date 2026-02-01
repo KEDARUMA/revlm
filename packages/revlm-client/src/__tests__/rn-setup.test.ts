@@ -1,3 +1,5 @@
+import { jest } from '@jest/globals';
+
 const resetGlobals = () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const g: any = global;
@@ -14,36 +16,29 @@ describe('rn-setup', () => {
     resetGlobals();
   });
 
-  it('sets globals when optional deps are available', () => {
-    jest.doMock('react-native-quick-crypto', () => ({
-      randomBytes: jest.fn(),
-    }), { virtual: true });
-    jest.doMock('react-native-get-random-values', () => ({}), { virtual: true });
-    jest.doMock('fast-text-encoding', () => ({
-      TextEncoder: class MockTextEncoder {},
-      TextDecoder: class MockTextDecoder {},
-    }), { virtual: true });
-    jest.doMock('buffer', () => ({
-      Buffer: class MockBuffer {},
-    }), { virtual: true });
-
-    jest.isolateModules(() => {
-      require('../rn-setup');
-    });
-
+  it('keeps existing globals when already defined', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const g: any = global;
+    g.crypto = { mock: true };
+    g.TextEncoder = class MockTextEncoder {};
+    g.TextDecoder = class MockTextDecoder {};
+    g.Buffer = class MockBuffer {};
+
+    await jest.isolateModulesAsync(async () => {
+      await import('../rn-setup');
+    });
+
     expect(g.crypto).toBeDefined();
     expect(g.TextEncoder?.name).toBe('MockTextEncoder');
     expect(g.TextDecoder?.name).toBe('MockTextDecoder');
     expect(g.Buffer?.name).toBe('MockBuffer');
   });
 
-  it('does not throw when optional deps are missing', () => {
-    expect(() => {
-      jest.isolateModules(() => {
-        require('../rn-setup');
-      });
-    }).not.toThrow();
+  it('does not throw when optional deps are missing', async () => {
+    await expect(
+      jest.isolateModulesAsync(async () => {
+        await import('../rn-setup');
+      }),
+    ).resolves.not.toThrow();
   });
 });

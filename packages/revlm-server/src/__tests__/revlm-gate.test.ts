@@ -9,6 +9,8 @@ import { ObjectId, EJSON } from 'bson';
 import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { jest } from '@jest/globals';
 import { ensureDefined } from '@kedaruma/revlm-shared/utils/asserts';
 import { User } from '@kedaruma/revlm-shared/models/user-types';
 import {
@@ -19,6 +21,9 @@ import {
   cleanupTestEnvironment,
 } from '@kedaruma/revlm-server/__tests__/setupTestMongo';
 import { pruneExpiredRefreshSessions } from '@kedaruma/revlm-server/server';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load environment variables
 // 環境変数を読み込む
