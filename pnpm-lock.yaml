@@ -92,7 +92,7 @@ importers:
     dependencies:
       '@kedaruma/revlm-server':
         specifier: latest
-        version: 1.0.50(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
+        version: 1.0.51(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
       '@kedaruma/revlm-shared':
         specifier: latest
         version: 1.0.9
@@ -874,8 +874,8 @@ packages:
   '@kedaruma/revlm-client@1.0.54':
     resolution: {integrity: sha512-4+INq2LKjTnhE+UpRSmcSY9kj9vVOjGEsZLrJV3Om+r7N+2pkG5GFmiQ7+DTy64CP8rFtl7WYFZ4WdR5luQOKQ==}
 
-  '@kedaruma/revlm-server@1.0.50':
-    resolution: {integrity: sha512-SV3CYysfNOEe3PS9Y2bw34eh3XcChZtxY/A2xHs/Fj6vKrl2mt7Gf4zo7tX118wGA0JeXw5jw6tSlC92LvVFHQ==}
+  '@kedaruma/revlm-server@1.0.51':
+    resolution: {integrity: sha512-GRCyC03Z3ayQwXqlnrrOEkrW01KFAfhaGjD7m8a7Iq5edEKWbiCzndKwfmEbwTRUOnsx2QFaLmzt9oepP5WSsA==}
 
   '@kedaruma/revlm-shared@1.0.9':
     resolution: {integrity: sha512-V2bTtREykfu/KCcqcJOQtiZGRGTwExbiKXpxna9v67uQR+Tsox4QHXOHbZTuu6283KU7xlkhw/rINgTViGmnag==}
@@ -4886,7 +4886,7 @@ snapshots:
       bson: 6.10.4
       dotenv: 17.2.3
 
-  '@kedaruma/revlm-server@1.0.50(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
+  '@kedaruma/revlm-server@1.0.51(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
     dependencies:
       '@kedaruma/revlm-shared': 1.0.9
       bcrypt: 6.0.0
