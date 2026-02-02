@@ -16,7 +16,7 @@
     "publish:all": "pnpm publish --filter @kedaruma/revlm-shared --access public && pnpm publish --filter @kedaruma/revlm-server --access public && pnpm publish --filter @kedaruma/revlm-client --access public",
     "bump:patch": "node scripts/bump-patch-versions.js",
     "bump-build-publish": "node scripts/bump-build-publish.js",
-    "refresh-examples": "node scripts/refresh-examples.js",
+    "refresh-packages": "node scripts/refresh-examples.js",
     "showver": "node scripts/showver.js"
   },
   "keywords": [],

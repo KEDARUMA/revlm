@@ -9,11 +9,11 @@ const run = (command, options = {}) => {
   execSync(command, { stdio: "inherit", ...options });
 };
 
-const listExamplePackages = () => {
+const listWorkspacePackages = () => {
   if (!fs.existsSync(packagesDir)) return [];
   return fs
     .readdirSync(packagesDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith("example-"))
+    .filter((entry) => entry.isDirectory())
     .map((entry) => path.join(packagesDir, entry.name));
 };
 
@@ -30,14 +30,14 @@ const main = () => {
     { cwd: rootDir }
   );
 
-  const examplePackages = listExamplePackages();
-  if (examplePackages.length === 0) {
-    console.log("[refresh-examples] no packages/example-* found");
+  const workspacePackages = listWorkspacePackages();
+  if (workspacePackages.length === 0) {
+    console.log("[refresh-packages] no packages/* found");
     return;
   }
 
-  for (const pkgDir of examplePackages) {
-    console.log(`[refresh-examples] reinstalling ${pkgDir}`);
+  for (const pkgDir of workspacePackages) {
+    console.log(`[refresh-packages] reinstalling ${pkgDir}`);
     removeNodeModules(pkgDir);
     run("pnpm install", { cwd: pkgDir });
   }
