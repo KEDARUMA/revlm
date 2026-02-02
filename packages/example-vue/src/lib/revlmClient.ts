@@ -16,14 +16,14 @@ export function getRevlmClient(): Revlm {
     });
 
   cachedClient = new Revlm(env.baseUrl, {
-    provisionalEnabled: true,
+    provisionalEnabled: env.provisionalLoginEnabled,
     provisionalAuthSecretMaster: env.provisionalAuthSecretMaster,
     provisionalAuthDomain: env.provisionalAuthDomain,
     sessionId: env.sessionId,
     autoSetToken: true,
-    autoRefreshOn401: true,
+    autoRefreshOn401: env.autoRefreshOn401,
     fetchImpl,
-    logLevel: "info",
+    logLevel: env.logLevel,
   });
 
   return cachedClient;

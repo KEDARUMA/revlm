@@ -24,7 +24,6 @@
         <button type="submit" :disabled="findLoading">{{ findLoading ? "Running..." : "Run find" }}</button>
       </form>
       <div v-if="findError" class="error">{{ findError }}</div>
-      <pre v-if="findOutput" class="code-box">{{ findOutput }}</pre>
 
       <form @submit.prevent="handleAggregate">
         <label for="aggregateQuery">Aggregate pipeline (JSON array)</label>
@@ -32,7 +31,6 @@
         <button type="submit" :disabled="aggregateLoading">{{ aggregateLoading ? "Running..." : "Run aggregate" }}</button>
       </form>
       <div v-if="aggregateError" class="error">{{ aggregateError }}</div>
-      <pre v-if="aggregateOutput" class="code-box">{{ aggregateOutput }}</pre>
     </div>
 
     <div class="card" v-if="mode === 'demo'">
@@ -44,8 +42,15 @@
 
     <div class="card" v-else>
       <h2>Search results</h2>
-      <div v-if="searchResults.length === 0">No results.</div>
-      <div v-for="(row, idx) in searchResults" :key="idx" class="result-item result-row">
+      <pre v-if="resultKind === 'find' && findOutput" class="code-box">{{ findOutput }}</pre>
+      <pre v-if="resultKind === 'aggregate' && aggregateOutput" class="code-box">{{ aggregateOutput }}</pre>
+      <div v-if="resultKind === 'search' && searchResults.length === 0">No results.</div>
+      <div
+        v-if="resultKind === 'search'"
+        v-for="(row, idx) in searchResults"
+        :key="idx"
+        class="result-item result-row"
+      >
         <div class="thumb-cell">
           <img v-if="row.cover_photo" :src="row.cover_photo" alt="cover" class="thumb" />
         </div>
@@ -80,28 +85,55 @@ const searchResults = ref<SearchRow[]>([]);
 const searching = ref(false);
 const searchError = ref<string | null>(null);
 const mode = ref<"demo" | "search">("demo");
-const findQuery = ref('{ "year": 2024 }');
+const findQuery = ref('{ "year": "2024" }');
 const findOutput = ref<string>("");
 const findError = ref<string | null>(null);
 const findLoading = ref(false);
-const aggregateQuery = ref('[{ "$match": { "year": 2024 } }, { "$limit": 5 }]');
+const aggregateQuery = ref('[{ "$match": { "year": "2024" } }, { "$limit": 5 }]');
 const aggregateOutput = ref<string>("");
 const aggregateError = ref<string | null>(null);
 const aggregateLoading = ref(false);
+const resultKind = ref<"none" | "search" | "find" | "aggregate">("none");
 
 function addLog(line: string) {
   demoLogs.value.push(line);
 }
 
-function isAuthError(err: unknown): boolean {
+type AuthErrorKind = "token_expired" | "no_refresh_secret" | "unauthorized" | null;
+
+function getAuthErrorKind(err: unknown): AuthErrorKind {
   const anyErr = err as any;
-  if (anyErr?.response?.status === 401) return true;
+  if (anyErr?.revlmReason === "no_refresh_secret") return "no_refresh_secret";
+  const response = anyErr?.response;
+  const reason = response?.reason || response?.error;
+  if (reason === "token_expired" || response?.error === "Token expired") return "token_expired";
   const message = typeof anyErr?.message === "string" ? anyErr.message : String(anyErr);
-  return message.includes("401") || message.includes("Unauthorized") || message.includes("Token expired");
+  if (message.includes("Refresh cookie missing")) return "no_refresh_secret";
+  if (message.includes("Token expired")) return "token_expired";
+  if (response?.status === 401 || message.includes("Unauthorized") || message.includes("401")) return "unauthorized";
+  return null;
+}
+
+function showAuthDialog(kind: AuthErrorKind) {
+  if (!kind) return;
+  let message = "";
+  if (kind === "no_refresh_secret") {
+    message = "Refresh cookie missing. Please log in again.";
+  } else if (kind === "token_expired") {
+    message = "Token expired. Please log in again.";
+  } else {
+    message = "Authentication failed. Please log in again.";
+  }
+  console.error(message);
+  if (typeof window !== "undefined" && typeof window.alert === "function") {
+    window.alert(message);
+  }
 }
 
 async function handleAuthFailure(err: unknown) {
-  if (!isAuthError(err)) return false;
+  const kind = getAuthErrorKind(err);
+  if (!kind) return false;
+  showAuthDialog(kind);
   isLoggedIn.value = false;
   currentAuthId.value = "";
   await router.push("/login");
@@ -185,6 +217,9 @@ async function handleSearch() {
   searchError.value = null;
   searching.value = true;
   searchResults.value = [];
+  findOutput.value = "";
+  aggregateOutput.value = "";
+  resultKind.value = "search";
 
   // Clear demo logs when running a search.
   // 検索実行時はデモログをクリアする。
@@ -218,6 +253,11 @@ async function handleFind() {
   findError.value = null;
   findOutput.value = "";
   findLoading.value = true;
+  searchResults.value = [];
+  aggregateOutput.value = "";
+  demoLogs.value = [];
+  mode.value = "search";
+  resultKind.value = "find";
   try {
     const filter = JSON.parse(findQuery.value || "{}");
     const coll: RevlmCompat.Services.MongoDB.MongoDBCollection<MoviesCombined> =
@@ -237,6 +277,11 @@ async function handleAggregate() {
   aggregateError.value = null;
   aggregateOutput.value = "";
   aggregateLoading.value = true;
+  searchResults.value = [];
+  findOutput.value = "";
+  demoLogs.value = [];
+  mode.value = "search";
+  resultKind.value = "aggregate";
   try {
     const pipeline = JSON.parse(aggregateQuery.value || "[]");
     if (!Array.isArray(pipeline)) {

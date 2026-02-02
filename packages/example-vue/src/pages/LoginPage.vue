@@ -16,7 +16,7 @@
         <button type="submit" :disabled="loading">
           {{ loading ? "Logging in..." : "Login" }}
         </button>
-        <button type="button" class="secondary" @click="openRegister">
+        <button type="button" @click="openRegister" style="margin-left: 8px;">
           Create account
         </button>
       </form>
@@ -47,7 +47,7 @@
             <button type="submit" :disabled="registerLoading">
               {{ registerLoading ? "Registering..." : "Register" }}
             </button>
-            <button type="button" class="secondary" @click="closeRegister">
+            <button type="button" @click="closeRegister">
               Close
             </button>
           </div>
@@ -61,6 +61,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
+import { getEnv } from "../lib/env";
 import { getRevlmClient } from "../lib/revlmClient";
 import { currentAuthId, isLoggedIn } from "../state/session";
 
@@ -76,6 +77,7 @@ const registerAuthId = ref("");
 const registerPassword = ref("");
 const registerError = ref<string | null>(null);
 const registerLoading = ref(false);
+const env = getEnv();
 
 async function handleLogin() {
   error.value = null;
@@ -112,7 +114,7 @@ async function handleRegister() {
   registerLoading.value = true;
   try {
     const revlm = getRevlmClient();
-    const provisional = await revlm.provisionalLogin(registerAuthId.value);
+    const provisional = await revlm.provisionalLogin(env.provisionalAuthId);
     if (!provisional.ok) {
       throw new Error(provisional.error || provisional.reason || "provisional login failed");
     }
