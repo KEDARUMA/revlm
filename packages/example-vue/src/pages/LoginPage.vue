@@ -79,6 +79,8 @@ const registerError = ref<string | null>(null);
 const registerLoading = ref(false);
 const env = getEnv();
 
+// Perform login with the demo credentials.
+// デモ用の認証情報でログインする。
 async function handleLogin() {
   error.value = null;
   loading.value = true;
@@ -98,6 +100,8 @@ async function handleLogin() {
   }
 }
 
+// Open the provisional registration modal and reset inputs.
+// 仮登録モーダルを開き、入力状態をリセットする。
 function openRegister() {
   registerError.value = null;
   registerAuthId.value = "";
@@ -105,10 +109,14 @@ function openRegister() {
   showRegister.value = true;
 }
 
+// Close the provisional registration modal.
+// 仮登録モーダルを閉じる。
 function closeRegister() {
   showRegister.value = false;
 }
 
+// Register a new user via provisional login.
+// 仮ログインで新規ユーザを登録する。
 async function handleRegister() {
   registerError.value = null;
   registerLoading.value = true;

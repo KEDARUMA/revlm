@@ -27,6 +27,21 @@ export interface SetupTestEnvironmentResult {
   serverUrl: string;
 }
 
+type HostPort = { host: string; port: number };
+
+function parseMongoHostPort(uri?: string | null): HostPort | undefined {
+  if (!uri || !uri.startsWith('mongodb://')) return undefined;
+  const withoutScheme = uri.slice('mongodb://'.length);
+  const hostPart = withoutScheme.split('/')[0] || '';
+  const firstHost = hostPart.split(',')[0] || '';
+  const hostWithoutAuth = firstHost.includes('@') ? firstHost.split('@').pop() || '' : firstHost;
+  const [host, portRaw] = hostWithoutAuth.split(':');
+  if (!host || !portRaw) return undefined;
+  const port = Number(portRaw);
+  if (!Number.isFinite(port)) return undefined;
+  return { host, port };
+}
+
 /**
  * Setup test environment (MongoDB + Server)
  * @param options - Configuration options
@@ -45,7 +60,13 @@ export async function setupTestEnvironment(
   if (!mongoUri) {
     const dbName = options.serverConfig.usersDbName || 'testdb';
     try {
-      mongod = await MongoMemoryServer.create({ instance: { dbName } });
+      const mongoHostPort = parseMongoHostPort(process.env.MONGO_URI);
+      mongod = await MongoMemoryServer.create({
+        instance: {
+          dbName,
+          ...(mongoHostPort ? { port: mongoHostPort.port, ip: mongoHostPort.host } : {}),
+        },
+      });
       if (!mongod) {
         throw new Error('MongoMemoryServer.create() returned null/undefined');
       }

@@ -224,9 +224,31 @@ async function run() {
   const dMany = await coll.deleteMany({});
   log("deleteMany ok", dMany);
 
-  // 17) movies_combined report (read-only).
-  // 17) movies_combined レポート（読み取りのみ）。
-  step("17) movies_combined report");
+  // 17) provisional user create/delete.
+  // 17) 仮ユーザの作成/削除。
+  const tempAuthId = "prov-demo-user";
+  const tempPassword = "prov-demo-pass";
+  step("17) provisionalLogin (temp user)");
+  const provisional = await revlm.provisionalLogin(process.env.PROVISIONAL_AUTH_ID || "example-prov");
+  if (!provisional.ok) throw new Error(`provisional login failed: ${provisional.error || provisional.reason}`);
+  log("provisionalLogin ok", { authId: tempAuthId });
+  step("18) registerUser (temp user)");
+  const tempUser = { authId: tempAuthId, userType: "user", roles: ["example"], name: "Example Temp" };
+  const registerTemp = await revlm.registerUser(tempUser, tempPassword);
+  if (!registerTemp.ok) throw new Error(`registerUser failed: ${registerTemp.error || registerTemp.reason}`);
+  log("registerUser ok", { authId: tempAuthId });
+  step("19) login (temp user)");
+  const tempLogin = await revlm.login(tempAuthId, tempPassword);
+  if (!tempLogin.ok) throw new Error(`login failed: ${tempLogin.error || tempLogin.reason}`);
+  log("login ok", { authId: tempAuthId });
+  step("20) deleteUser (temp user)");
+  const deleteTemp = await revlm.deleteUser({ authId: tempAuthId });
+  if (!deleteTemp.ok) throw new Error(`deleteUser failed: ${deleteTemp.error || deleteTemp.reason}`);
+  log("deleteUser ok", { authId: tempAuthId });
+
+  // 21) movies_combined report (read-only).
+  // 21) movies_combined レポート（読み取りのみ）。
+  step("21) movies_combined report");
   await printMoviesReport(revlm, usersDbName);
 
   // Done.

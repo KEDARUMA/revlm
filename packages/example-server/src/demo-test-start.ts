@@ -8,6 +8,7 @@ import { MongoClient, type Collection } from "mongodb";
 import { parse as parseCsv } from "csv-parse/sync";
 import { createRequire } from "module";
 import { AuthClient } from "@kedaruma/revlm-shared/auth-token";
+import { startHttpsProxy } from "./https-proxy.js";
 
 // CLI option map (string to string).
 // CLIオプションを文字列で保持するマップ。
@@ -174,6 +175,21 @@ function readEnv(): EnvConfig {
   if (process.env.REFRESH_SESSION_TTL_SEC) env.refreshSessionTtlSec = process.env.REFRESH_SESSION_TTL_SEC;
   if (process.env.PORT) env.port = process.env.PORT;
   return env;
+}
+
+type HostPort = { host: string; port: number };
+
+function parseMongoHostPort(uri?: string): HostPort | undefined {
+  if (!uri || !uri.startsWith("mongodb://")) return undefined;
+  const withoutScheme = uri.slice("mongodb://".length);
+  const hostPart = withoutScheme.split("/")[0] || "";
+  const firstHost = hostPart.split(",")[0] || "";
+  const hostWithoutAuth = firstHost.includes("@") ? firstHost.split("@").pop() || "" : firstHost;
+  const [host, portRaw] = hostWithoutAuth.split(":");
+  if (!host || !portRaw) return undefined;
+  const port = Number(portRaw);
+  if (!Number.isFinite(port)) return undefined;
+  return { host, port };
 }
 
 async function ensureFileCached(url: string, filePath: string): Promise<void> {
@@ -554,16 +570,23 @@ async function run() {
   const dbPath = getDbPath();
   // Load .env (or custom env file).
   // .env（または指定ファイル）を読み込む。
+  const hasCliOverrides = process.argv.includes("--");
+  const defaultEnvFile = hasCliOverrides ? ".env.start-with-opts" : ".env.demo";
   const envFile = process.env.EXAMPLE_SERVER_ENV
     ? path.resolve(process.cwd(), process.env.EXAMPLE_SERVER_ENV)
-    : path.resolve(process.cwd(), ".env");
+    : path.resolve(process.cwd(), defaultEnvFile);
   loadEnv({ path: envFile, override: true });
+  const proxyEnvFile = process.env.EXAMPLE_PROXY_ENV
+    ? path.resolve(process.cwd(), process.env.EXAMPLE_PROXY_ENV)
+    : path.resolve(process.cwd(), ".env.proxy");
+  loadEnv({ path: proxyEnvFile, override: true });
   const cli = parseArgs(process.argv.slice(2));
   const env = readEnv();
   // MongoMemoryServer instance for the sample backend.
   // サンプル用MongoMemoryServerインスタンス。
   let mongod: MongoMemoryServer | undefined;
   let child: ChildProcess | undefined;
+  let proxyServer: import("node:https").Server | undefined;
   let shuttingDown = false;
 
   try {
@@ -584,10 +607,12 @@ async function run() {
     // 注意:
     // - MongoMemoryServer は通常「メモリDB」だが、`dbPath` 指定でディスク永続化が可能。
     // - これにより `movies_combined` を再起動を跨いで保持しつつ、reset-dataで簡単に初期化できる。
+    const mongoHostPort = parseMongoHostPort(process.env.MONGO_URI);
     mongod = await MongoMemoryServer.create({
       instance: {
         dbName: cli.usersDbName || env.usersDbName || "revlm",
         dbPath,
+        ...(mongoHostPort ? { port: mongoHostPort.port, ip: mongoHostPort.host } : {}),
       },
     });
     const mongoUri = mongod.getUri();
@@ -664,11 +689,15 @@ async function run() {
     if (!child.pid) {
       throw new Error("[example-server] failed to spawn revlm-server");
     }
+    console.log("[example-server] revlm-server spawned", { pid: child.pid });
 
     // Wait for server to accept connections, then create the demo user via HTTP.
     // サーバが接続受付できる状態になるまで待ち、HTTP経由でdemoユーザを作成する。
     await waitForHttpServer(serverUrl, 20_000);
+    proxyServer = startHttpsProxy({ target: serverUrl });
+    console.log("[example-server] https proxy start requested");
     await createDemoUserIfPossible(serverUrl, env, cli);
+    console.log("[example-server] startup complete");
 
     fs.writeFileSync(pidFile, String(process.pid), "utf8");
     const shutdown = async (exitCode: number) => {
@@ -679,11 +708,16 @@ async function run() {
         fs.unlinkSync(pidFile);
       }
 
+      if (proxyServer) {
+        await new Promise<void>((resolve) => proxyServer!.close(() => resolve()));
+        console.log("[example-server] https proxy stopped");
+      }
       // Stop child server (revlm-server).
       // 子プロセス（revlm-server）を停止する。
       if (child && child.pid) {
         try {
           child.kill("SIGTERM");
+          console.log("[example-server] revlm-server stop requested");
         } catch {
           // ignore
         }

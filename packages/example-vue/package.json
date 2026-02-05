@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "demo": "vite",
-    "test": "vitest run"
+    "test": "echo \"example-vue: no tests (browser-based checks only)\""
   },
   "dependencies": {
     "@kedaruma/revlm-client": "latest",

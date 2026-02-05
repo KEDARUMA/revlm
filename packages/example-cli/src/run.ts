@@ -244,5 +244,27 @@ export async function runExampleFlow(options: FlowOptions) {
   const found = await coll.find({ name: 'cli-item' } as any);
   log('collection.find ok', { resultCount: Array.isArray(found) ? found.length : 0 });
 
+  // 8) provisional user create/delete.
+  // 8) 仮ユーザの作成/削除。
+  const tempAuthId = 'prov-demo-user';
+  const tempPassword = 'prov-demo-pass';
+  log('provisionalLogin (temp user) start');
+  const provisionalTemp = await revlm.provisionalLogin(options.provisionalAuthId);
+  if (!provisionalTemp.ok) throw new Error(`provisional login failed: ${provisionalTemp.error || provisionalTemp.reason}`);
+  log('provisionalLogin (temp user) ok');
+  log('registerUser (temp user) start');
+  const tempUser = { authId: tempAuthId, userType: 'user', roles: ['example'], name: 'Example Temp' };
+  const registerTemp = await revlm.registerUser(tempUser, tempPassword);
+  if (!registerTemp.ok) throw new Error(`registerUser failed: ${registerTemp.error || registerTemp.reason}`);
+  log('registerUser (temp user) ok');
+  log('login (temp user) start');
+  const tempLogin = await revlm.login(tempAuthId, tempPassword);
+  if (!tempLogin.ok) throw new Error(`login failed: ${tempLogin.error || tempLogin.reason}`);
+  log('login (temp user) ok');
+  log('deleteUser (temp user) start');
+  const deleteTemp = await revlm.deleteUser({ authId: tempAuthId });
+  if (!deleteTemp.ok) throw new Error(`deleteUser failed: ${deleteTemp.error || deleteTemp.reason}`);
+  log('deleteUser (temp user) ok');
+
   return { authId, resultCount: Array.isArray(found) ? found.length : 0 };
 }

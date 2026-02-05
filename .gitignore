@@ -13,6 +13,7 @@ packages/*/*.tgz
 # サンプルサーバのローカルデータ/キャッシュ（コミットしない）
 packages/example-server/.cache/
 packages/example-server/.data/
+packages/example-server/.certs/
 
 # Logs
 logs/

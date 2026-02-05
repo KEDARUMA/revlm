@@ -94,13 +94,19 @@ const aggregateOutput = ref<string>("");
 const aggregateError = ref<string | null>(null);
 const aggregateLoading = ref(false);
 const resultKind = ref<"none" | "search" | "find" | "aggregate">("none");
+const PROV_DEMO_AUTH_ID = "prov-demo-user";
+const PROV_DEMO_PASSWORD = "prov-demo-pass";
 
+// Append a line to the demo log.
+// デモログに1行追加する。
 function addLog(line: string) {
   demoLogs.value.push(line);
 }
 
 type AuthErrorKind = "token_expired" | "no_refresh_secret" | "unauthorized" | null;
 
+// Normalize known auth errors to a simple kind.
+// 認証系エラーを簡易的な種別に正規化する。
 function getAuthErrorKind(err: unknown): AuthErrorKind {
   const anyErr = err as any;
   if (anyErr?.revlmReason === "no_refresh_secret") return "no_refresh_secret";
@@ -114,6 +120,8 @@ function getAuthErrorKind(err: unknown): AuthErrorKind {
   return null;
 }
 
+// Show an auth failure message to the user.
+// 認証失敗メッセージを表示する。
 function showAuthDialog(kind: AuthErrorKind) {
   if (!kind) return;
   let message = "";
@@ -130,6 +138,8 @@ function showAuthDialog(kind: AuthErrorKind) {
   }
 }
 
+// Handle auth failures and redirect to login when needed.
+// 認証失敗時にログイン画面へ戻す。
 async function handleAuthFailure(err: unknown) {
   const kind = getAuthErrorKind(err);
   if (!kind) return false;
@@ -140,6 +150,8 @@ async function handleAuthFailure(err: unknown) {
   return true;
 }
 
+// Run the main demo flow (gate operations + provisional user cycle).
+// メインのデモ処理（ゲート操作 + 仮ユーザ作成/削除）。
 async function runGateDemo() {
   // Guard if the user isn't logged in.
   // ログインしていない場合はガードする。
@@ -148,6 +160,8 @@ async function runGateDemo() {
     return;
   }
 
+  // Execute MongoDB function demo operations.
+  // MongoDBのファンクションデモ操作を実行する。
   try {
     addLog("[1] open collection demo_items");
     type DemoDoc = { _id: unknown; name: string; value: number; note?: string };
@@ -205,6 +219,35 @@ async function runGateDemo() {
     addLog("[14] deleteMany {} (cleanup)");
     await coll.deleteMany({});
 
+    // Provisional user create/delete demo.
+    // 仮ユーザの作成/削除デモ。
+    addLog("[15] provisionalLogin (temp user)");
+    const provisional = await revlm.provisionalLogin(env.provisionalAuthId);
+    if (!provisional.ok) {
+      throw new Error(provisional.error || provisional.reason || "provisional login failed");
+    }
+
+    addLog("[16] registerUser (temp user)");
+    const registerRes = await revlm.registerUser(
+      { authId: PROV_DEMO_AUTH_ID, userType: "user", roles: ["user"], name: "Prov Demo User" },
+      PROV_DEMO_PASSWORD
+    );
+    if (!registerRes.ok) {
+      throw new Error(registerRes.error || registerRes.reason || "register failed");
+    }
+
+    addLog("[17] login (temp user)");
+    const tempLogin = await revlm.login(PROV_DEMO_AUTH_ID, PROV_DEMO_PASSWORD);
+    if (!tempLogin.ok) {
+      throw new Error(tempLogin.error || tempLogin.reason || "login failed");
+    }
+
+    addLog("[18] deleteUser (temp user)");
+    const deleteRes = await revlm.deleteUser({ authId: PROV_DEMO_AUTH_ID });
+    if (!deleteRes.ok) {
+      throw new Error(deleteRes.error || deleteRes.reason || "delete failed");
+    }
+
     addLog("Demo operations completed.");
   } catch (err: unknown) {
     if (await handleAuthFailure(err)) return;
@@ -213,6 +256,8 @@ async function runGateDemo() {
   }
 }
 
+// Execute the full-text search flow for movies_combined.
+// movies_combined の全文検索を実行する。
 async function handleSearch() {
   searchError.value = null;
   searching.value = true;
@@ -249,6 +294,8 @@ async function handleSearch() {
   }
 }
 
+// Run a find query from the JSON input.
+// JSON入力の find クエリを実行する。
 async function handleFind() {
   findError.value = null;
   findOutput.value = "";
@@ -273,6 +320,8 @@ async function handleFind() {
   }
 }
 
+// Run an aggregate pipeline from the JSON input.
+// JSON入力の aggregate パイプラインを実行する。
 async function handleAggregate() {
   aggregateError.value = null;
   aggregateOutput.value = "";
@@ -300,6 +349,8 @@ async function handleAggregate() {
   }
 }
 
+// Start the demo flow on initial mount.
+// 画面初期表示時にデモ処理を開始する。
 onMounted(() => {
   runGateDemo().catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
