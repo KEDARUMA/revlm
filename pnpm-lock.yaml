@@ -82,7 +82,7 @@ importers:
     dependencies:
       '@kedaruma/revlm-client':
         specifier: latest
-        version: 1.0.56
+        version: 1.0.57
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
@@ -248,7 +248,7 @@ importers:
         version: 0.3.31
       '@kedaruma/revlm-client':
         specifier: latest
-        version: 1.0.56
+        version: 1.0.57
       '@kedaruma/revlm-shared':
         specifier: ^1.0.10
         version: 1.0.10
@@ -900,7 +900,7 @@ importers:
     dependencies:
       '@kedaruma/revlm-server':
         specifier: latest
-        version: 1.0.53(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
+        version: 1.0.54(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
       '@kedaruma/revlm-shared':
         specifier: latest
         version: 1.0.10
@@ -931,7 +931,7 @@ importers:
     dependencies:
       '@kedaruma/revlm-client':
         specifier: latest
-        version: 1.0.56
+        version: 1.0.57
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
@@ -2302,11 +2302,11 @@ packages:
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
 
-  '@kedaruma/revlm-client@1.0.56':
-    resolution: {integrity: sha512-R/PThLEYs67nXv/CqGQf32nOb+/LW5Cjl36oPhOXgospyr6zSfHt9vCHqO4EMN54d7O3dEHTdBvUJGV531ZauQ==}
+  '@kedaruma/revlm-client@1.0.57':
+    resolution: {integrity: sha512-T019XAz7jaZPL2WuF0iO7Q+EpxHkt7qwRYgjSE+lAH5jcb3b3A0BJN8o/32bxQhwYlO9zo/PSppYDFiBBAa4eA==}
 
-  '@kedaruma/revlm-server@1.0.53':
-    resolution: {integrity: sha512-oB7jxmkg/Z4iKeKXwlp29tAEyosn1qsMQeqkN6fcbeVEctscFW1IZKB50m4lKW5PrNABt8kADjZqrsrRM8IKBQ==}
+  '@kedaruma/revlm-server@1.0.54':
+    resolution: {integrity: sha512-8zg393Ex90sCPLZnIfko5Xj1D5cko/zm3IzmAEe9+9I33xHzNmu1q754UGVZlnX6hkvf+yRqog8Te5K1r3x8DA==}
 
   '@kedaruma/revlm-shared@1.0.10':
     resolution: {integrity: sha512-jKCrwQgZq8xxanc48SswMNMissyth5tlL+fuFWIzPTSySz/l76tOmCfUgk3qhN/p+/iWnpI6fSO2ysp/7kD41w==}
@@ -9130,13 +9130,13 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@kedaruma/revlm-client@1.0.56':
+  '@kedaruma/revlm-client@1.0.57':
     dependencies:
       '@kedaruma/revlm-shared': 1.0.10
       bson: 6.10.4
       dotenv: 17.2.3
 
-  '@kedaruma/revlm-server@1.0.53(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
+  '@kedaruma/revlm-server@1.0.54(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
     dependencies:
       '@kedaruma/revlm-shared': 1.0.10
       bcrypt: 6.0.0
