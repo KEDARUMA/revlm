@@ -43,6 +43,27 @@ export function getRevlmClient(): Revlm {
     return [raw];
   };
 
+  // Use CookieManager methods with optional WebKit flag.
+  // WebKitフラグ対応のCookieManager呼び出し。
+  const setFromResponse = (CookieManager as any).setFromResponse as (
+    url: string,
+    cookie: string,
+    useWebKit?: boolean
+  ) => Promise<void>;
+  const setCookie = (CookieManager as any).set as (
+    url: string,
+    cookie: {
+      name: string;
+      value: string;
+      domain?: string;
+      path?: string;
+      expires?: string;
+      secure?: boolean;
+      httpOnly?: boolean;
+    },
+    useWebKit?: boolean
+  ) => Promise<void>;
+
   const cookieStore = {
     // Provide Cookie header from native cookie store.
     // ネイティブCookieストアからCookieヘッダを生成する。
@@ -101,7 +122,7 @@ export function getRevlmClient(): Revlm {
             value: string;
             domain?: string;
             path?: string;
-            expires?: Date;
+            expires?: string;
             secure?: boolean;
             httpOnly?: boolean;
           } = {
@@ -114,10 +135,17 @@ export function getRevlmClient(): Revlm {
             const attrValue = rest.join('=');
             if (normalizedKey === 'domain') parsed.domain = attrValue;
             if (normalizedKey === 'path') parsed.path = attrValue;
-            if (normalizedKey === 'expires') parsed.expires = new Date(attrValue);
+            if (normalizedKey === 'expires') {
+              const expires = new Date(attrValue);
+              if (!Number.isNaN(expires.getTime())) {
+                parsed.expires = expires.toISOString();
+              }
+            }
             if (normalizedKey === 'max-age') {
               const seconds = Number(attrValue);
-              if (!Number.isNaN(seconds)) parsed.expires = new Date(Date.now() + seconds * 1000);
+              if (!Number.isNaN(seconds)) {
+                parsed.expires = new Date(Date.now() + seconds * 1000).toISOString();
+              }
             }
             if (normalizedKey === 'secure') parsed.secure = true;
             if (normalizedKey === 'httponly') parsed.httpOnly = true;
@@ -132,8 +160,8 @@ export function getRevlmClient(): Revlm {
           try {
             // Also write to WebKit store for consistency across APIs.
             // WebKitストアにも書き込み、API間の差を吸収する。
-            await CookieManager.setFromResponse(url, cookie);
-            await CookieManager.setFromResponse(url, cookie, true);
+            await setFromResponse(url, cookie);
+            await setFromResponse(url, cookie, true);
           } catch (err: unknown) {
             console.log('[cookie] setFromResponse error', { url, cookie }, toLogString(err));
             // Fallback to manual cookie parsing + set.
@@ -143,8 +171,8 @@ export function getRevlmClient(): Revlm {
               continue;
             }
             try {
-              await CookieManager.set(url, parsed);
-              await CookieManager.set(url, parsed, true);
+              await setCookie(url, parsed);
+              await setCookie(url, parsed, true);
             } catch (fallbackErr: unknown) {
               console.log(
                 '[cookie] setFallback error',
@@ -170,7 +198,7 @@ export function getRevlmClient(): Revlm {
     const url = typeof input === 'string' ? input : (input as Request).url;
     const baseHeaders = new Headers();
     if (init?.headers) {
-      new Headers(init.headers as HeadersInit).forEach((value, key) => {
+      new Headers(init.headers as any).forEach((value, key) => {
         baseHeaders.set(key, value);
       });
     } else if (typeof input !== 'string') {
@@ -224,7 +252,7 @@ export function getRevlmClient(): Revlm {
     autoRefreshOn401: env.autoRefreshOn401,
     fetchImpl,
     cookieStore,
-    logLevel: env.logLevel,
+    logLevel: env.logLevel as any,
   });
 
   return cachedClient;

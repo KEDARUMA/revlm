@@ -12,6 +12,10 @@
 // One document in `revlm.movies_combined`.
 // `revlm.movies_combined` の1ドキュメント。
 export type MoviesCombined = {
+  // Document id from MongoDB.
+  // MongoDBのドキュメントID。
+  _id: string;
+
   // Original unnamed first column from the CSV (optional).
   // 元CSVの「名前なし先頭カラム」（任意）。
   _raw0?: string;
@@ -29,4 +33,3 @@ export type MoviesCombined = {
   url?: string;
   cover_photo?: string;
 };
-

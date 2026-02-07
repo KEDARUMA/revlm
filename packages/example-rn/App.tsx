@@ -141,7 +141,7 @@ export default function App() {
         }
         addLog('[pre-login] registerUser (auto)');
         const registerRes = await revlm.registerUser(
-          { authId: PROV_DEMO_AUTH_ID, userType: 'user', roles: ['user'], name: 'Prov Demo User' },
+          { authId: PROV_DEMO_AUTH_ID, userType: 'user', roles: ['user'] },
           PROV_DEMO_PASSWORD
         );
         if (!registerRes.ok) {

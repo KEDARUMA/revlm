@@ -24,15 +24,28 @@ type EnvConfig = {
 
 export function getEnv(): EnvConfig {
   const missing: string[] = [];
-  if (!REVLM_BASE_URL) missing.push('REVLM_BASE_URL');
-  if (!USERS_DB_NAME) missing.push('USERS_DB_NAME');
-  if (!RN_REVLM_SESSION_ID) missing.push('RN_REVLM_SESSION_ID');
-  if (!PROVISIONAL_LOGIN_ENABLED) missing.push('PROVISIONAL_LOGIN_ENABLED');
-  if (!PROVISIONAL_AUTH_ID) missing.push('PROVISIONAL_AUTH_ID');
-  if (!PROVISIONAL_AUTH_SECRET_MASTER) missing.push('PROVISIONAL_AUTH_SECRET_MASTER');
-  if (!PROVISIONAL_AUTH_DOMAIN) missing.push('PROVISIONAL_AUTH_DOMAIN');
-  if (!AUTO_REFRESH_ON_401) missing.push('AUTO_REFRESH_ON_401');
-  if (!LOG_LEVEL) missing.push('LOG_LEVEL');
+  // Require and collect missing env values.
+  // 必須の環境変数を収集する。
+  const requireEnv = (value: string | undefined, key: string): string => {
+    if (!value) {
+      missing.push(key);
+      return '';
+    }
+    return value;
+  };
+
+  const baseUrl = requireEnv(REVLM_BASE_URL, 'REVLM_BASE_URL');
+  const usersDbName = requireEnv(USERS_DB_NAME, 'USERS_DB_NAME');
+  const sessionId = requireEnv(RN_REVLM_SESSION_ID, 'RN_REVLM_SESSION_ID');
+  const provisionalLoginEnabledRaw = requireEnv(PROVISIONAL_LOGIN_ENABLED, 'PROVISIONAL_LOGIN_ENABLED');
+  const provisionalAuthId = requireEnv(PROVISIONAL_AUTH_ID, 'PROVISIONAL_AUTH_ID');
+  const provisionalAuthSecretMaster = requireEnv(
+    PROVISIONAL_AUTH_SECRET_MASTER,
+    'PROVISIONAL_AUTH_SECRET_MASTER'
+  );
+  const provisionalAuthDomain = requireEnv(PROVISIONAL_AUTH_DOMAIN, 'PROVISIONAL_AUTH_DOMAIN');
+  const autoRefreshOn401Raw = requireEnv(AUTO_REFRESH_ON_401, 'AUTO_REFRESH_ON_401');
+  const logLevel = requireEnv(LOG_LEVEL, 'LOG_LEVEL');
 
   if (missing.length) {
     throw new Error(
@@ -50,14 +63,14 @@ export function getEnv(): EnvConfig {
   };
 
   return {
-    baseUrl: REVLM_BASE_URL,
-    usersDbName: USERS_DB_NAME,
-    sessionId: RN_REVLM_SESSION_ID,
-    provisionalLoginEnabled: parseBool(PROVISIONAL_LOGIN_ENABLED, 'PROVISIONAL_LOGIN_ENABLED'),
-    provisionalAuthId: PROVISIONAL_AUTH_ID,
-    provisionalAuthSecretMaster: PROVISIONAL_AUTH_SECRET_MASTER,
-    provisionalAuthDomain: PROVISIONAL_AUTH_DOMAIN,
-    autoRefreshOn401: parseBool(AUTO_REFRESH_ON_401, 'AUTO_REFRESH_ON_401'),
-    logLevel: LOG_LEVEL,
+    baseUrl,
+    usersDbName,
+    sessionId,
+    provisionalLoginEnabled: parseBool(provisionalLoginEnabledRaw, 'PROVISIONAL_LOGIN_ENABLED'),
+    provisionalAuthId,
+    provisionalAuthSecretMaster,
+    provisionalAuthDomain,
+    autoRefreshOn401: parseBool(autoRefreshOn401Raw, 'AUTO_REFRESH_ON_401'),
+    logLevel,
   };
 }
