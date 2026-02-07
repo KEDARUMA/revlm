@@ -171,6 +171,7 @@ const REFRESH_COOKIE_NAME = 'revlm_refresh';
 const COOKIE_CHECK_TTL_SEC = 120;
 const COOKIE_CHECK_NAME = 'revlm_cookie_check';
 const SESSION_HEADER_NAME = 'x-revlm-session-id';
+const REFRESH_HEADER_NAME = 'x-revlm-refresh';
 const REFRESH_SESSIONS_COLLECTION = 'revlm_refresh_sessions';
 const REFRESH_SESSION_TTL_DEFAULT_SEC = 60 * 60 * 24 * 30;
 const REFRESH_SESSION_PRUNE_MIN_MS = 60 * 1000; // run at least every 60 seconds
@@ -195,6 +196,12 @@ function parseCookies(req: Request): Record<string, string> {
     acc[k] = v;
     return acc;
   }, {} as Record<string, string>);
+}
+
+function getHeaderString(req: Request, name: string): string | undefined {
+  const value = req.headers?.[name];
+  if (!value) return undefined;
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function normalizeSessionId(value?: string): string | undefined {
@@ -461,8 +468,15 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
         return sendResponse(req, res, { ok: false, reason: 'missing_session_id', code: ERROR_CODES.invalidToken }, 400);
       }
 
+      const cookieHeader = req.headers?.cookie;
+      const hasCookieHeader = typeof cookieHeader === 'string' && cookieHeader.length > 0;
       const cookies = parseCookies(req);
-      const refreshCookie = cookies[REFRESH_COOKIE_NAME];
+      let refreshCookie = cookies[REFRESH_COOKIE_NAME];
+      if (!hasCookieHeader && !refreshCookie) {
+        // Use header only when Cookie header is absent (non-browser clients).
+        // Cookieヘッダが無い場合のみヘッダを利用する（非ブラウザ向け）。
+        refreshCookie = getHeaderString(req, REFRESH_HEADER_NAME);
+      }
       if (!refreshCookie) return sendResponse(req, res, { ok: false, reason: 'no_refresh_secret', code: ERROR_CODES.invalidToken }, 401);
 
       let refreshPayload: any;

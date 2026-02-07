@@ -384,11 +384,12 @@ export default class Revlm {
           if ((refreshRes as any).reason === 'not_expired') {
             return this.requestWithRetry(path, method, body, { allowAuthRetry: false, retrying: true });
           }
-          this.logDebug('### refresh failed:', {
+          const refreshFailed = {
             reason: (refreshRes as any).reason,
             status: refreshRes.status,
             error: refreshRes.error,
-          });
+          };
+          this.logDebug('### refresh failed:', refreshFailed, JSON.stringify(refreshFailed));
           if ((refreshRes as any).reason === 'no_refresh_secret') {
             const missingError = new Error('Refresh cookie missing. Provide a cookie-aware fetch implementation for Node/RN.');
             (missingError as any).revlmReason = 'no_refresh_secret';

@@ -47,6 +47,51 @@ function createFetchWithCookies(baseFetch: typeof fetch) {
   };
 }
 
+function createFetchWithRefreshHeader(baseFetch: typeof fetch) {
+  const cookieJar = new Map<string, string>();
+  let refreshSecret = '';
+  const buildCookieHeader = () => {
+    if (!cookieJar.size) return '';
+    return Array.from(cookieJar.entries())
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ');
+  };
+  const storeCookie = (cookie: string) => {
+    const first = cookie.split(';')[0];
+    const eq = first.indexOf('=');
+    if (eq === -1) return;
+    const name = first.slice(0, eq);
+    const value = first.slice(eq + 1);
+    cookieJar.set(name, value);
+    if (name === 'revlm_refresh') {
+      refreshSecret = value;
+    }
+  };
+  return async (input: any, init: RequestInit = {}) => {
+    // Send refresh secret via header when Cookie header is omitted.
+    // Cookieヘッダを送らない代わりにヘッダでrefresh secretを送る。
+    const isRequest = typeof Request !== 'undefined' && input instanceof Request;
+    const baseHeaders = isRequest ? input.headers : undefined;
+    const headers = new Headers(init.headers || baseHeaders || {});
+    const url = typeof input === 'string' ? input : input.url;
+    const isRefreshRequest = url.includes('/refresh-token');
+    if (isRefreshRequest) {
+      if (refreshSecret) headers.set('x-revlm-refresh', refreshSecret);
+    } else {
+      const cookieHeader = buildCookieHeader();
+      if (cookieHeader) headers.set('cookie', cookieHeader);
+    }
+    const request = isRequest
+      ? new Request(input, { headers })
+      : new Request(input, { ...init, headers });
+    const res = await baseFetch(request);
+    const setCookie = (res.headers as any).getSetCookie?.() ?? res.headers.get('set-cookie');
+    const cookieList = Array.isArray(setCookie) ? setCookie : (setCookie ? [setCookie] : []);
+    cookieList.filter(Boolean).forEach(storeCookie);
+    return res;
+  };
+}
+
 describe('Revlm autoRefreshOn401 (integration)', () => {
   let testEnv: SetupTestEnvironmentResult;
 
@@ -106,6 +151,48 @@ describe('Revlm autoRefreshOn401 (integration)', () => {
 
     // Wait for the short-lived JWT to expire.
     // 短命JWTの期限切れを待つ。
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+
+    let res = await client.revlmGate({
+      db: ensureDefined(process.env.USERS_DB_NAME, 'USERS_DB_NAME is required'),
+      collection: ensureDefined(process.env.USERS_COLLECTION_NAME, 'USERS_COLLECTION_NAME is required'),
+      method: 'find',
+      filter: { authId: TEST_AUTH_ID },
+    });
+
+    if (!res.ok) {
+      const refreshRes = await client.refreshToken();
+      expect(refreshRes.ok).toBe(true);
+      res = await client.revlmGate({
+        db: ensureDefined(process.env.USERS_DB_NAME, 'USERS_DB_NAME is required'),
+        collection: ensureDefined(process.env.USERS_COLLECTION_NAME, 'USERS_COLLECTION_NAME is required'),
+        method: 'find',
+        filter: { authId: TEST_AUTH_ID },
+      });
+    }
+
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe(200);
+    expect(client.getToken()).not.toBe(initialToken);
+  });
+
+  it('refreshes token using header when cookie header is omitted', async () => {
+    if (typeof fetch === 'undefined') {
+      throw new Error('global fetch is required for this test');
+    }
+    // Use header-based refresh secret without Cookie header on refresh-token.
+    // refresh-token ではCookieヘッダを使わずヘッダ経由で更新する。
+    const client = new Revlm(testEnv.serverUrl, {
+      fetchImpl: createFetchWithRefreshHeader(fetch),
+      autoRefreshOn401: true,
+      sessionId: SESSION_ID,
+    });
+
+    const loginRes = await client.login(TEST_AUTH_ID, TEST_PASSWORD);
+    expect(loginRes.ok).toBe(true);
+    const initialToken = client.getToken();
+    expect(initialToken).toBeTruthy();
+
     await new Promise((resolve) => setTimeout(resolve, 2100));
 
     let res = await client.revlmGate({

@@ -19,8 +19,8 @@ import path from 'path';
 import { MongoClient } from 'mongodb';
 import bcrypt from 'bcrypt';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const filenameUrl = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(filenameUrl);
 
 // Load environment variables (refer to .env) so that the necessary settings for the test are stored in process.env.
 // 環境変数を読み込む（.env を参照）テスト内で必要な設定が process.env に入る。
@@ -65,6 +65,16 @@ async function loginAndGetCookie(authId: string, password: string, sessionId = S
   const cookies = ([] as string[]).concat(res.headers['set-cookie'] || []);
   const cookie = cookies.find((c: string) => c.startsWith('revlm_refresh'));
   return { token: body?.token, cookie };
+}
+
+function extractCookieValue(cookie?: string): string | undefined {
+  // Extract refresh cookie raw value from Set-Cookie.
+  // Set-CookieからリフレッシュCookieの値のみ抽出する。
+  if (!cookie) return undefined;
+  const first = cookie.split(';')[0];
+  const eq = first.indexOf('=');
+  if (eq === -1) return undefined;
+  return first.slice(eq + 1);
 }
 
 async function signedPost(pathname: string, body: any, token?: string, sessionId = SESSION_ID) {
@@ -170,6 +180,15 @@ describe('/refresh-token', () => {
     return req.send({});
   }
 
+  async function refreshWithHeader(token: string, refreshHeader?: string, serverUrl = SERVER_URL, sessionId = SESSION_ID) {
+    const req = request(serverUrl)
+      .post('/refresh-token')
+      .set('X-Revlm-JWT', `Bearer ${token}`);
+    if (sessionId) req.set('x-revlm-session-id', sessionId);
+    if (refreshHeader) req.set('x-revlm-refresh', refreshHeader);
+    return req.send({});
+  }
+
   it('refreshes an expired non-provisional token within window', async () => {
     const { cookie } = await loginAndGetCookie(STAFF_USER.authId, STAFF_USER.password);
     const expired = jwt.sign(
@@ -185,6 +204,20 @@ describe('/refresh-token', () => {
     const verifyBody = parseBody(verify);
     expect(verify.status).toBe(200);
     expect(verifyBody.ok).toBe(true);
+  });
+
+  it('refreshes using header when cookie header is absent', async () => {
+    const { cookie } = await loginAndGetCookie(STAFF_USER.authId, STAFF_USER.password);
+    const refreshHeader = extractCookieValue(cookie);
+    const expired = jwt.sign(
+      { _id: staffUserDoc._id, userType: staffUserDoc.userType, roles: staffUserDoc.roles, exp: Math.floor(Date.now() / 1000) - 10 },
+      JWT_SECRET
+    );
+    const res = await refreshWithHeader(expired, refreshHeader);
+    const body = parseBody(res);
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.token).toBeDefined();
   });
 
   it('rejects refresh when token is not expired', async () => {
