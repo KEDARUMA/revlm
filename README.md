@@ -1,7 +1,6 @@
 # Revlm Monorepo
 
 English documentation | [日本語ドキュメントはこちら](README-ja.md)  
-[Revlm-Client Reference](docs/Revlm-Client-Reference.md)
 
 Self-hosted alternative to MongoDB Realm App Services. This monorepo contains:
 
@@ -11,11 +10,7 @@ Self-hosted alternative to MongoDB Realm App Services. This monorepo contains:
 
 ## Background
 
-MongoDB Atlas is retiring App Services, so this project provides a drop-in, self-hosted replacement. It exposes:
-
-- MongoDB connectivity (Atlas or self-managed)
-- User authentication (password + provisional login)
-- Realm-compatible client APIs to smooth migrations
+This project provides a drop-in, self-hosted replacement for MongoDB Realm App Services. It supports password authentication and provisional login, and offers a Realm-compatible API to minimize migration effort.
 
 <table>
   <thead>
@@ -52,33 +47,18 @@ const docs = await coll.find({});<br>
   </tbody>
 </table>
 
-## Getting Started
-
-```bash
-pnpm install
-pnpm build
-pnpm test
-```
-
-## Scripts
-
-- `pnpm clean` – run each package’s clean script, then remove root-level `dist` / `node_modules`
-- `pnpm install` – restore workspace dependencies
-- `pnpm build` – build the entire monorepo
-- `pnpm test` – run Jest suites package by package
-- `pnpm pack:all` – run `pnpm pack` inside every workspace package to produce `.tgz` artifacts
+## [Revlm-Client Reference](docs/Revlm-Client-Reference.md)
 
 ## Demos
 
-Some demos require starting the demo server beforehand. See each package README for details.
+These demos can be run after building. Some require starting the demo server first, so check each package README.
+For the React Native demo, Xcode and Android Studio must be installed in advance.
 
-- [example-cli](packages/example-cli/README.md)  
+- [example-server](packages/example-server/README.md)
+  - Start the server and run demo initialization.
+- [example-cli](packages/example-cli/README.md)
   - CLI flow: register → login → token expiry → refresh → CRUD.
-- [example-rn](packages/example-rn/README.md)  
-  - React Native login/CRUD/refresh demo (local HTTPS required).
-- [example-server](packages/example-server/README.md)  
-  - Server startup and demo user/data initialization.
-- [example-vue](packages/example-vue/README.md)  
+- [example-vue](packages/example-vue/README.md)
   - Vue login/CRUD/refresh demo in the browser.
-
-See each package README for detailed instructions.
+- [example-rn](packages/example-rn/README.md)
+  - React Native login/CRUD/refresh demo (local HTTPS required).
