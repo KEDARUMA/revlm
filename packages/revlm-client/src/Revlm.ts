@@ -315,22 +315,6 @@ export default class Revlm {
     }
   }
 
-  private logTokenTtl(event: string, path: string, tokenOverride?: string) {
-    const token = tokenOverride || this._token;
-    if (!token) return;
-    const payload = this.decodeJwtPayload(token);
-    if (!payload || typeof payload.exp !== 'number') return;
-    const now = Math.floor(Date.now() / 1000);
-    const ttlSec = payload.exp - now;
-    this.logDebug('### token ttl', {
-      event,
-      path,
-      ttlSec,
-      exp: payload.exp,
-      iat: payload.iat,
-    });
-  }
-
   private async signIfNeeded(
     _url: string,
     _method: string,
@@ -412,7 +396,6 @@ export default class Revlm {
         }
       }
       if (out.ok && !this.shouldSkipCookieCheck(path)) {
-        this.logTokenTtl('request_ok', path);
       }
       return out;
     } catch (err: any) {
