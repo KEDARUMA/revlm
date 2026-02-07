@@ -1,5 +1,4 @@
 import { Revlm } from '@kedaruma/revlm-client/revlm-compat';
-import type { CookieStore } from '@kedaruma/revlm-client/revlm-compat';
 import type * as RevlmCompat from '@kedaruma/revlm-client/revlm-compat';
 
 // Demo defaults for the CLI walkthrough.
@@ -52,28 +51,34 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// In-memory cookie store for demo environments (Node/CLI).
-// CLI環境向けのインメモリCookie保存。
-//
-// Why this exists:
-// - revlm-server uses an HttpOnly cookie (`revlm_refresh`) for refresh-token.
-// - In browsers, cookies are managed automatically.
-// - In Node/CLI, `fetch` does NOT automatically persist cookies.
-// - So we emulate the minimal browser behavior: store `Set-Cookie` and send `Cookie` on next requests.
-//
-// 目的:
-// - revlm-server は refresh-token のために HttpOnly cookie（`revlm_refresh`）を使う。
-// - ブラウザではCookieが自動で管理される。
-// - Node/CLI では `fetch` がCookieを自動保持しない。
-// - そのため最小限のブラウザ挙動（Set-Cookie保存→次リクエストでCookie送信）を再現する。
-function createInMemoryCookieStore(): CookieStore {
-  const jar = new Map<string, string>();
+// In-memory refresh secret store for CLI (header-based refresh).
+// CLI向けのリフレッシュシークレット保持（ヘッダ方式）。
+function createRefreshSecretStore() {
+  let refreshSecret: string | undefined;
   return {
-    getCookieHeader: () => {
-      if (!jar.size) return undefined;
-      return Array.from(jar.entries())
-        .map(([key, value]) => `${key}=${value}`)
-        .join('; ');
+    get: () => refreshSecret,
+    setFromSetCookie: (setCookieHeader?: string | null) => {
+      if (!setCookieHeader) return;
+      const [cookiePair] = setCookieHeader.split(';');
+      if (!cookiePair) return;
+      const sep = cookiePair.indexOf('=');
+      if (sep === -1) return;
+      const name = cookiePair.slice(0, sep).trim();
+      if (name !== 'revlm_refresh') return;
+      refreshSecret = cookiePair.slice(sep + 1).trim();
+    },
+  };
+}
+
+// Cookie store that only supports /cookie-check endpoints.
+// /cookie-check のみ対応するCookieストア。
+function createCookieCheckStore(): RevlmCompat.CookieStore {
+  let cookieHeader: string | undefined;
+  return {
+    getCookieHeader: (url) => {
+      if (!cookieHeader) return undefined;
+      if (!url.includes('/cookie-check')) return undefined;
+      return cookieHeader;
     },
     setCookie: (_url, setCookieHeader) => {
       if (!setCookieHeader) return;
@@ -83,9 +88,35 @@ function createInMemoryCookieStore(): CookieStore {
       if (sep === -1) return;
       const name = cookiePair.slice(0, sep).trim();
       const value = cookiePair.slice(sep + 1).trim();
-      if (!name) return;
-      jar.set(name, value);
+      if (!name || !value) return;
+      cookieHeader = `${name}=${value}`;
     },
+  };
+}
+
+// Fetch wrapper to capture refresh secret and send it via header.
+// refresh シークレットを保持してヘッダ送信する fetch ラッパー。
+function createFetchImpl(refreshStore: { get: () => string | undefined; setFromSetCookie: (value?: string | null) => void }): typeof fetch {
+  return async (input, init) => {
+    const url = typeof input === 'string' ? input : (input as Request).url;
+    const headers = new Headers(init?.headers || {});
+    if (url.includes('/refresh-token')) {
+      const refreshSecret = refreshStore.get();
+      if (refreshSecret) {
+        headers.set('x-revlm-refresh', refreshSecret);
+      }
+      headers.delete('cookie');
+    }
+    const res = await fetch(input, { ...init, headers });
+    try {
+      const setCookieHeader = (res.headers as any)?.getSetCookie?.() ?? res.headers.get('set-cookie');
+      const raw = Array.isArray(setCookieHeader) ? setCookieHeader.join(',') : setCookieHeader;
+      refreshStore.setFromSetCookie(raw);
+    } catch {
+      // noop
+      // 何もしない。
+    }
+    return res;
   };
 }
 
@@ -94,8 +125,8 @@ export async function runExampleFlow(options: FlowOptions) {
   // デモ出力として分かりやすい進捗ログ。
   const log = (...args: any[]) => console.log('[example-cli]', ...args);
 
-  // Prepare client + cookie store for refresh-token support.
-  // refresh-token対応のためCookieStore付きでクライアントを作成。
+  // Prepare client + refresh header support.
+  // refresh ヘッダ送信のための準備。
   //
   // Note:
   // - `sessionId` is REQUIRED by the server for login/refresh in the current design.
@@ -104,7 +135,9 @@ export async function runExampleFlow(options: FlowOptions) {
   // 注意:
   // - 現設計では server 側が login/refresh で `sessionId` を必須としている。
   // - CLI ではデモの再現性を優先して固定 sessionId を使う。
-  const cookieStore = createInMemoryCookieStore();
+  const refreshStore = createRefreshSecretStore();
+  const fetchImpl = createFetchImpl(refreshStore);
+  const cookieStore = createCookieCheckStore();
   const revlm = new Revlm(options.baseUrl, {
     provisionalEnabled: true,
     provisionalAuthSecretMaster: options.provisionalAuthSecretMaster,
@@ -112,6 +145,7 @@ export async function runExampleFlow(options: FlowOptions) {
     autoSetToken: true,
     autoRefreshOn401: !!options.autoRefreshOn401,
     sessionId: options.sessionId,
+    fetchImpl,
     cookieStore,
     logLevel: 'info',
   });
@@ -165,10 +199,10 @@ export async function runExampleFlow(options: FlowOptions) {
   // 3) login (acquire JWT).
   // 3) ログイン（JWT取得）。
   //
-  // After login, the server also sets the refresh cookie.
-  // The cookieStore captures it via Set-Cookie.
-  // ログイン後、サーバは refresh cookie もセットする。
-  // cookieStore が Set-Cookie からそれを保持する。
+  // After login, the server sets the refresh cookie.
+  // We capture the value and send it via header on refresh.
+  // ログイン後、サーバは refresh cookie をセットする。
+  // その値を保持して refresh 時にヘッダで送る。
   log('login start');
   const loginRes = await revlm.login(authId, password);
   if (!loginRes.ok) throw new Error(`login failed: ${loginRes.error || loginRes.reason}`);
@@ -188,17 +222,17 @@ export async function runExampleFlow(options: FlowOptions) {
     log('sleep (waiting for token expiry)', { ms: 2500 });
     await sleep(2500);
 
-    // 4) refresh token (uses cookie store).
-    // 4) トークン更新（CookieStore利用）。
+    // 4) refresh token (header-based).
+    // 4) トークン更新（ヘッダ方式）。
     //
     // refreshToken:
     // - Sends the expired access token in Authorization header.
-    // - Sends the refresh secret cookie from cookieStore in Cookie header.
+    // - Sends refresh secret via x-revlm-refresh header.
     // - Receives a new access token (+ new refresh cookie) on success.
     //
     // refreshToken の挙動:
     // - 期限切れアクセストークンを Authorization で送る。
-    // - cookieStore の refresh cookie を Cookie で送る。
+    // - refresh シークレットを x-revlm-refresh で送る。
     // - 成功時に新アクセストークン（+新 refresh cookie）を得る。
     log('refreshToken start');
     const refreshRes = await revlm.refreshToken();

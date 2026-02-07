@@ -1,12 +1,23 @@
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
-import { runExampleFlow } from "./run.js";
+import { Revlm } from '@kedaruma/revlm-client/revlm-compat';
+import type * as RevlmCompat from '@kedaruma/revlm-client/revlm-compat';
+import { runExampleFlow } from './run.js';
 
 // Track child process + assigned port.
 // 子プロセスと割当ポートの保持。
 type ServerProcess = {
   child: ReturnType<typeof spawn>;
   port: number;
+};
+
+type ExampleClientOptions = {
+  baseUrl: string;
+  sessionId: string;
+  provisionalAuthId: string;
+  provisionalAuthSecretMaster: string;
+  provisionalAuthDomain: string;
+  autoRefreshOn401: boolean;
 };
 
 // Pick a random high port to avoid conflicts.
@@ -113,6 +124,164 @@ async function stopExampleServer(processInfo: ServerProcess) {
   });
 }
 
+// In-memory refresh secret store for CLI (header-based refresh).
+// CLI向けのリフレッシュシークレット保持（ヘッダ方式）。
+function createRefreshSecretStore() {
+  let refreshSecret: string | undefined;
+  return {
+    get: () => refreshSecret,
+    setFromSetCookie: (setCookieHeader?: string | null) => {
+      if (!setCookieHeader) return;
+      const [cookiePair] = setCookieHeader.split(';');
+      if (!cookiePair) return;
+      const sep = cookiePair.indexOf('=');
+      if (sep === -1) return;
+      const name = cookiePair.slice(0, sep).trim();
+      if (name !== 'revlm_refresh') return;
+      refreshSecret = cookiePair.slice(sep + 1).trim();
+    },
+  };
+}
+
+// Cookie store that only supports /cookie-check endpoints.
+// /cookie-check のみ対応するCookieストア。
+function createCookieCheckStore(): RevlmCompat.CookieStore {
+  let cookieHeader: string | undefined;
+  return {
+    getCookieHeader: (url) => {
+      if (!cookieHeader) return undefined;
+      if (!url.includes('/cookie-check')) return undefined;
+      return cookieHeader;
+    },
+    setCookie: (_url, setCookieHeader) => {
+      if (!setCookieHeader) return;
+      const [cookiePair] = setCookieHeader.split(';');
+      if (!cookiePair) return;
+      const sep = cookiePair.indexOf('=');
+      if (sep === -1) return;
+      const name = cookiePair.slice(0, sep).trim();
+      const value = cookiePair.slice(sep + 1).trim();
+      if (!name || !value) return;
+      cookieHeader = `${name}=${value}`;
+    },
+  };
+}
+
+// Fetch wrapper to capture refresh secret and send it via header.
+// refresh シークレットを保持してヘッダ送信する fetch ラッパー。
+function createFetchImpl(refreshStore: { get: () => string | undefined; setFromSetCookie: (value?: string | null) => void }): typeof fetch {
+  return async (input, init) => {
+    const url = typeof input === 'string' ? input : (input as Request).url;
+    const headers = new Headers(init?.headers || {});
+    if (url.includes('/refresh-token')) {
+      const refreshSecret = refreshStore.get();
+      if (refreshSecret) {
+        headers.set('x-revlm-refresh', refreshSecret);
+      }
+      headers.delete('cookie');
+    }
+    const res = await fetch(input, { ...init, headers });
+    try {
+      const setCookieHeader = (res.headers as any)?.getSetCookie?.() ?? res.headers.get('set-cookie');
+      const raw = Array.isArray(setCookieHeader) ? setCookieHeader.join(',') : setCookieHeader;
+      refreshStore.setFromSetCookie(raw);
+    } catch {
+      // noop
+      // 何もしない。
+    }
+    return res;
+  };
+}
+
+// Create a client configured for the CLI refresh flow.
+// CLIのリフレッシュフロー用クライアントを作成する。
+function createExampleClient(options: ExampleClientOptions) {
+  const refreshStore = createRefreshSecretStore();
+  const fetchImpl = createFetchImpl(refreshStore);
+  const cookieStore = createCookieCheckStore();
+  return new Revlm(options.baseUrl, {
+    provisionalEnabled: true,
+    provisionalAuthSecretMaster: options.provisionalAuthSecretMaster,
+    provisionalAuthDomain: options.provisionalAuthDomain,
+    autoSetToken: true,
+    autoRefreshOn401: options.autoRefreshOn401,
+    sessionId: options.sessionId,
+    fetchImpl,
+    cookieStore,
+    logLevel: 'info',
+  });
+}
+
+// Register + login to get a valid session.
+// 登録とログインで有効なセッションを作る。
+async function createSession(revlm: Revlm, authId: string, password: string, provisionalAuthId: string) {
+  const provisional = await revlm.provisionalLogin(provisionalAuthId);
+  if (!provisional.ok) {
+    throw new Error(`provisional login failed: ${provisional.error || provisional.reason}`);
+  }
+  const registerRes = await revlm.registerUser({ authId, userType: 'staff', roles: ['example'], name: 'Example CLI' }, password);
+  if (!registerRes.ok) {
+    throw new Error(`registerUser failed: ${registerRes.error || registerRes.reason}`);
+  }
+  const loginRes = await revlm.login(authId, password);
+  if (!loginRes.ok) {
+    throw new Error(`login failed: ${loginRes.error || loginRes.reason}`);
+  }
+}
+
+// Wait helper for token expiry.
+// トークン期限切れ待機。
+async function waitForTokenExpiry() {
+  await new Promise((resolve) => setTimeout(resolve, 2500));
+}
+
+// Verify that expired token returns 401 and refresh succeeds.
+// 期限切れトークンが401になり、refreshが成功することを確認する。
+async function verifyExpiredTokenFlow(options: ExampleClientOptions) {
+  const authId = `example-cli-expired-${Date.now()}`;
+  const password = 'example-pass';
+  const revlm = createExampleClient({ ...options, autoRefreshOn401: false });
+  await createSession(revlm, authId, password, options.provisionalAuthId);
+  await waitForTokenExpiry();
+
+  const coll = revlm.db('revlm').collection<{ _id: unknown; name: string; value: number }>('example_items');
+  let expiredOk = false;
+  try {
+    await coll.find({});
+  } catch (err: any) {
+    if (err?.response?.status === 401) {
+      expiredOk = true;
+    } else {
+      throw err;
+    }
+  }
+  if (!expiredOk) {
+    throw new Error('expected 401 on expired token');
+  }
+
+  const refreshRes = await revlm.refreshToken();
+  if (!refreshRes.ok) {
+    throw new Error(`refresh failed: ${refreshRes.error || refreshRes.reason}`);
+  }
+
+  // If this call succeeds, the refreshed token is usable.
+  // ここが成功すればリフレッシュ後のトークンが使えている。
+  await coll.find({});
+}
+
+// Verify auto-refresh retries after 401 without manual refresh.
+// 401後の自動リフレッシュが動作することを確認する。
+async function verifyAutoRefreshFlow(options: ExampleClientOptions) {
+  const authId = `example-cli-auto-${Date.now()}`;
+  const password = 'example-pass';
+  const revlm = createExampleClient({ ...options, autoRefreshOn401: true });
+  await createSession(revlm, authId, password, options.provisionalAuthId);
+  await waitForTokenExpiry();
+
+  const coll = revlm.db('revlm').collection<{ _id: unknown; name: string; value: number }>('example_items');
+  await coll.find({});
+}
+
 // Run the CLI example flow against the temporary server.
 // 一時サーバに対してCLIサンプルフローを実行する。
 async function run() {
@@ -129,6 +298,18 @@ async function run() {
       provisionalAuthDomain: 'example.domain',
       sessionId: 'example-cli-session',
     });
+
+    const clientOptions: ExampleClientOptions = {
+      baseUrl: `http://localhost:${server.port}`,
+      sessionId: 'example-cli-session',
+      provisionalAuthId: 'example-prov',
+      provisionalAuthSecretMaster: 'example-master',
+      provisionalAuthDomain: 'example.domain',
+      autoRefreshOn401: false,
+    };
+
+    await verifyExpiredTokenFlow(clientOptions);
+    await verifyAutoRefreshFlow({ ...clientOptions, autoRefreshOn401: true });
   } finally {
     // Always stop the spawned server.
     // 起動したサーバは必ず停止する。

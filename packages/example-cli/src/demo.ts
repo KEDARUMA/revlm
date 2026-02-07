@@ -229,7 +229,7 @@ async function run() {
   const tempAuthId = "prov-demo-user";
   const tempPassword = "prov-demo-pass";
   step("17) provisionalLogin (temp user)");
-  const provisional = await revlm.provisionalLogin(process.env.PROVISIONAL_AUTH_ID || "example-prov");
+　　　　　　　　　　　　　　　　　  const provisional = await revlm.provisionalLogin(process.env.PROVISIONAL_AUTH_ID || "example-prov");
   if (!provisional.ok) throw new Error(`provisional login failed: ${provisional.error || provisional.reason}`);
   log("provisionalLogin ok", { authId: tempAuthId });
   step("18) registerUser (temp user)");
