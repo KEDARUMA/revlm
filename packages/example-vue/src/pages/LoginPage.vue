@@ -32,6 +32,13 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>Demo operations (provisional)</h2>
+      <div class="log-box">
+        <div v-for="(line, idx) in demoLogs" :key="idx">{{ line }}</div>
+      </div>
+    </div>
+
     <div v-if="showRegister" class="modal-backdrop">
       <div class="modal">
         <h2>Create account</h2>
@@ -59,11 +66,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { getEnv } from "../lib/env";
 import { getRevlmClient } from "../lib/revlmClient";
-import { currentAuthId, isLoggedIn } from "../state/session";
+import { currentAuthId, demoLogs, isLoggedIn, preLoginProvisioned } from "../state/session";
 
 // Login page handles demo authentication.
 // デモログインを行うページ。
@@ -78,6 +85,14 @@ const registerPassword = ref("");
 const registerError = ref<string | null>(null);
 const registerLoading = ref(false);
 const env = getEnv();
+const PROV_DEMO_AUTH_ID = "prov-demo-user";
+const PROV_DEMO_PASSWORD = "prov-demo-pass";
+
+// Append a line to the shared demo log.
+// 共有デモログに1行追加する。
+function addLog(line: string) {
+  demoLogs.value.push(line);
+}
 
 // Perform login with the demo credentials.
 // デモ用の認証情報でログインする。
@@ -143,4 +158,46 @@ async function handleRegister() {
     registerLoading.value = false;
   }
 }
+
+// Run the provisional registration once on login page mount.
+// ログイン画面の初期表示時に仮登録を1回だけ実行する。
+onMounted(() => {
+  if (preLoginProvisioned.value) return;
+  const runProvision = async () => {
+    demoLogs.value = [];
+    addLog("[pre-login] provisionalLogin (auto)");
+    const revlm = getRevlmClient();
+    try {
+      const provisional = await revlm.provisionalLogin(env.provisionalAuthId);
+      if (!provisional.ok) {
+        throw new Error(provisional.error || provisional.reason || "provisional login failed");
+      }
+      addLog("[pre-login] registerUser (auto)");
+      const registerRes = await revlm.registerUser(
+        { authId: PROV_DEMO_AUTH_ID, userType: "user", roles: ["user"], name: "Prov Demo User" },
+        PROV_DEMO_PASSWORD
+      );
+      if (!registerRes.ok) {
+        const reason = registerRes.error || registerRes.reason || "register failed";
+        if (reason.includes("authId already exists")) {
+          addLog("[pre-login] registerUser skipped (already exists)");
+        } else {
+          throw new Error(reason);
+        }
+      } else {
+        addLog("[pre-login] registerUser ok");
+      }
+      preLoginProvisioned.value = true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addLog(`[error] ${msg}`);
+      preLoginProvisioned.value = false;
+    } finally {
+      // Clear provisional token to avoid polluting the main session.
+      // 仮ログイントークンを破棄して本セッションの汚染を防ぐ。
+      revlm.clearToken();
+    }
+  };
+  runProvision();
+});
 </script>

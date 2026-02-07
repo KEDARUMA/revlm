@@ -41,6 +41,18 @@ mkcert -key-file packages/example-server/.certs/localhost-key.pem \
 - `packages/example-server/.certs/localhost-key.pem`
 - `packages/example-server/.certs/localhost.pem`
 
+### 1.5) React Native（シミュレータ）
+React Native デモは HTTPS を使うため、エミュレータ/シミュレータ側で証明書を信頼させてください。
+端末を起動した状態で、`packages/example-rn` の補助スクリプトを実行します。
+
+```
+pnpm --filter @kedaruma/example-rn trust:ios-cert
+pnpm --filter @kedaruma/example-rn trust:android-cert
+```
+
+iOS については、起動中のシミュレータ全てに mkcert の root CA を登録します。
+別の端末を起動した場合は、再度実行してください。
+
 ### 2) .env.proxy で proxy 設定
 proxy は以下の環境変数を利用します（すべて任意）:
 - `EXAMPLE_PROXY_HTTPS_PORT`（HTTPS 待受ポート）

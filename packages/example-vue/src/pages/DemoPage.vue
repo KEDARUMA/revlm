@@ -69,7 +69,7 @@ import { useRouter } from "vue-router";
 import type * as RevlmCompat from "@kedaruma/revlm-client/revlm-compat";
 import { getEnv } from "../lib/env";
 import { getRevlmClient } from "../lib/revlmClient";
-import { currentAuthId, isLoggedIn } from "../state/session";
+import { currentAuthId, demoLogs, isLoggedIn } from "../state/session";
 import type { MoviesCombined } from "../moviesCombinedTypes";
 
 // Demo page runs gate operations and provides search.
@@ -78,7 +78,6 @@ const router = useRouter();
 const env = getEnv();
 const revlm = getRevlmClient();
 
-const demoLogs = ref<string[]>([]);
 const searchQuery = ref("");
 type SearchRow = Pick<MoviesCombined, "year" | "title" | "description" | "cover_photo">;
 const searchResults = ref<SearchRow[]>([]);
@@ -219,34 +218,34 @@ async function runGateDemo() {
     addLog("[14] deleteMany {} (cleanup)");
     await coll.deleteMany({});
 
-    // Provisional user create/delete demo.
-    // 仮ユーザの作成/削除デモ。
-    addLog("[15] provisionalLogin (temp user)");
-    const provisional = await revlm.provisionalLogin(env.provisionalAuthId);
-    if (!provisional.ok) {
-      throw new Error(provisional.error || provisional.reason || "provisional login failed");
-    }
+    // Provisional user create/delete demo (temporarily disabled).
+    // 仮ユーザの作成/削除デモ（一時的に無効化）。
+    // addLog("[15] provisionalLogin (temp user)");
+    // const provisional = await revlm.provisionalLogin(env.provisionalAuthId);
+    // if (!provisional.ok) {
+    //   throw new Error(provisional.error || provisional.reason || "provisional login failed");
+    // }
 
-    addLog("[16] registerUser (temp user)");
-    const registerRes = await revlm.registerUser(
-      { authId: PROV_DEMO_AUTH_ID, userType: "user", roles: ["user"], name: "Prov Demo User" },
-      PROV_DEMO_PASSWORD
-    );
-    if (!registerRes.ok) {
-      throw new Error(registerRes.error || registerRes.reason || "register failed");
-    }
+    // addLog("[16] registerUser (temp user)");
+    // const registerRes = await revlm.registerUser(
+    //   { authId: PROV_DEMO_AUTH_ID, userType: "user", roles: ["user"], name: "Prov Demo User" },
+    //   PROV_DEMO_PASSWORD
+    // );
+    // if (!registerRes.ok) {
+    //   throw new Error(registerRes.error || registerRes.reason || "register failed");
+    // }
 
-    addLog("[17] login (temp user)");
-    const tempLogin = await revlm.login(PROV_DEMO_AUTH_ID, PROV_DEMO_PASSWORD);
-    if (!tempLogin.ok) {
-      throw new Error(tempLogin.error || tempLogin.reason || "login failed");
-    }
+    // addLog("[17] login (temp user)");
+    // const tempLogin = await revlm.login(PROV_DEMO_AUTH_ID, PROV_DEMO_PASSWORD);
+    // if (!tempLogin.ok) {
+    //   throw new Error(tempLogin.error || tempLogin.reason || "login failed");
+    // }
 
-    addLog("[18] deleteUser (temp user)");
-    const deleteRes = await revlm.deleteUser({ authId: PROV_DEMO_AUTH_ID });
-    if (!deleteRes.ok) {
-      throw new Error(deleteRes.error || deleteRes.reason || "delete failed");
-    }
+    // addLog("[18] deleteUser (temp user)");
+    // const deleteRes = await revlm.deleteUser({ authId: PROV_DEMO_AUTH_ID });
+    // if (!deleteRes.ok) {
+    //   throw new Error(deleteRes.error || deleteRes.reason || "delete failed");
+    // }
 
     addLog("Demo operations completed.");
   } catch (err: unknown) {

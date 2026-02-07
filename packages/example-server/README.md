@@ -40,6 +40,18 @@ Files created:
 - `packages/example-server/.certs/localhost-key.pem`
 - `packages/example-server/.certs/localhost.pem`
 
+### 1.5) React Native (simulators)
+The React Native demo uses HTTPS, so you must trust the cert on each simulator/emulator.
+Run the helper scripts from `packages/example-rn` after booting the device:
+
+```
+pnpm --filter @kedaruma/example-rn trust:ios-cert
+pnpm --filter @kedaruma/example-rn trust:android-cert
+```
+
+The iOS script installs the mkcert root CA on all booted simulators.
+Run it again whenever you boot a different device.
+
 ### 2) Configure proxy via .env.proxy
 The proxy uses these environment variables (all optional):
 - `EXAMPLE_PROXY_HTTPS_PORT` (HTTPS listen port)
