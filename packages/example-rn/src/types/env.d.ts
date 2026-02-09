@@ -9,5 +9,3 @@ declare module '@env' {
   export const AUTO_REFRESH_ON_401: string | undefined;
   export const LOG_LEVEL: string | undefined;
 }
-
-declare module 'set-cookie-parser';

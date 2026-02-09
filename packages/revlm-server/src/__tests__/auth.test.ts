@@ -15,6 +15,7 @@ import { fileURLToPath } from 'url';
 import { jest } from '@jest/globals';
 import { User } from '@kedaruma/revlm-shared/models/user-types';
 import { AuthClient } from '@kedaruma/revlm-shared/auth-token';
+import { randomBytes as nodeRandomBytes } from 'crypto';
 import { ensureDefined } from '@kedaruma/revlm-shared/utils/asserts';
 import { SetupTestEnvironmentResult, setupTestEnvironment, createTestUser, cleanupTestUser, cleanupTestEnvironment } from '@kedaruma/revlm-server/__tests__/setupTestMongo';
 import path from 'path';
@@ -201,10 +202,15 @@ describe('Auth API Integration', () => {
 
 // Provisional Login 関連のテスト群
 describe('Provisional Login API', () => {
+  const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
   // /provisional-login でログインする
   it('log in via provisional-login', async () => {
-    const provisionalClient = new AuthClient({ secretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER!, authDomain: process.env.PROVISIONAL_AUTH_DOMAIN! });
+    const provisionalClient = new AuthClient({
+      secretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER!,
+      authDomain: process.env.PROVISIONAL_AUTH_DOMAIN!,
+      randomBytes,
+    });
     const freshPassword = await provisionalClient.producePassword(process.env.PROVISIONAL_AUTH_ID!);
     const body = {
       authId: process.env.PROVISIONAL_AUTH_ID,
@@ -233,7 +239,11 @@ describe('Provisional Login API', () => {
 
   // provisional login のトークンで /revlm-gate 使うと 403 になることを確認
   it('verify that using a provisional login token with revlm-gate results in a 403 status', async () => {
-    const provisionalClient = new AuthClient({ secretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER!, authDomain: process.env.PROVISIONAL_AUTH_DOMAIN! });
+    const provisionalClient = new AuthClient({
+      secretMaster: process.env.PROVISIONAL_AUTH_SECRET_MASTER!,
+      authDomain: process.env.PROVISIONAL_AUTH_DOMAIN!,
+      randomBytes,
+    });
     const freshPassword = await provisionalClient.producePassword(process.env.PROVISIONAL_AUTH_ID!);
     const loginBody = { authId: process.env.PROVISIONAL_AUTH_ID, password: freshPassword };
     const loginRes = await request(serverUrl)

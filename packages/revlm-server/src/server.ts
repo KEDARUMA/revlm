@@ -60,12 +60,13 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
   const contentLength = typeof contentLengthHeader === 'string' ? Number(contentLengthHeader) : undefined;
   if (contentLength && contentLength > BODY_WARN_THRESHOLD) {
     const isGate = (req.originalUrl || req.url || '').includes('/revlm-gate');
-    console.warn('[body-size warning]', {
-      url: req.originalUrl || req.url,
-      contentLength,
-      threshold: BODY_WARN_THRESHOLD,
-      ...(isGate ? { query: req.body } : {}),
-    });
+    if (!isGate) {
+      console.warn('[body-size warning]', {
+        url: req.originalUrl || req.url,
+        contentLength,
+        threshold: BODY_WARN_THRESHOLD,
+      });
+    }
   }
   next();
 });
@@ -180,9 +181,25 @@ let refreshSessionTtlSec = REFRESH_SESSION_TTL_DEFAULT_SEC;
 const ERROR_CODES = {
   authFailed: 4349,
   tokenExpired: 40101,
-  refreshWindowExceeded: 40102,
   provisionalForbidden: 40301,
   invalidToken: 40001,
+  // Refresh-token: recoverable (10000 series)
+  refreshMissingAccessToken: 10100,
+  refreshAccessTokenNotExpired: 10200,
+  refreshMissingSessionId: 10300,
+  refreshMissingRefreshSecret: 10400,
+  refreshAccessTokenExpired: 10500,
+  // Refresh-token: fatal (20000 series)
+  refreshAccessTokenInvalid: 20100,
+  refreshProvisionalForbidden: 20200,
+  refreshSecretInvalid: 20300,
+  refreshSecretMismatch: 20400,
+  refreshTokenUserMismatch: 20500,
+  refreshUserNotFound: 20600,
+  refreshSecretExpired: 20700,
+  refreshSecretHashMismatch: 20800,
+  refreshWindowExceededFatal: 20900,
+  refreshUnexpectedError: 29900,
 };
 
 function parseCookies(req: Request): Record<string, string> {
@@ -264,6 +281,50 @@ type RefreshSession = {
   createdAt?: Date;
   updatedAt?: Date;
 };
+
+type RefreshFailureLog = {
+  cause: string;
+  reason: string;
+  status: number;
+  code?: number;
+  recoverable: boolean;
+  step?: string;
+  sessionId?: string;
+  refreshSecret?: string;
+};
+
+function maskSecret(value?: string, head = 10, tail = 6): string {
+  if (!value) return '<empty>';
+  if (value.length <= head + tail) return value;
+  return `${value.slice(0, head)}***${value.slice(-tail)}`;
+}
+
+function logRefreshFailure(log: RefreshFailureLog) {
+  const payload = {
+    cause: log.cause,
+    reason: log.reason,
+    status: log.status,
+    code: log.code,
+    step: log.step,
+    session: log.sessionId ? maskSecret(log.sessionId) : '<empty>',
+    refresh: maskSecret(log.refreshSecret),
+  };
+  const line1 = `[refresh-token][${log.recoverable ? 'debug' : 'error'}][${log.recoverable ? 'recoverable' : 'fatal'}] cause=${log.cause}`;
+  const line2 = `session=${payload.session} refresh=${payload.refresh}`;
+  const line3 = `details=${JSON.stringify({ status: log.status, reason: log.reason, code: log.code, step: log.step })}`;
+  if (log.recoverable) {
+    if (!shouldLog('debug')) return;
+    console.debug(line1);
+    console.debug(line2);
+    console.debug(line3);
+    console.debug('');
+    return;
+  }
+  console.error(line1);
+  console.error(line2);
+  console.error(line3);
+  console.error('');
+}
 
 // Load refresh session from dedicated collection.
 // 専用コレクションからrefresh sessionを取得する。
@@ -444,28 +505,90 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
     const tokenFromHeader = header && header.split(' ')[1];
     const tokenFromCustom = customHeader && customHeader.split(' ')[1];
     const token = (req.body && req.body.token) || tokenFromCustom || tokenFromHeader;
-    if (!token) return sendResponse(req, res, { ok: false, reason: 'no_token', code: ERROR_CODES.invalidToken }, 400);
+    if (!token) {
+      logRefreshFailure({
+        cause: 'missing_access_token',
+        reason: 'no_token',
+        status: 400,
+        code: ERROR_CODES.refreshMissingAccessToken,
+        recoverable: true,
+        step: 'read_token',
+      });
+      return sendResponse(req, res, { ok: false, reason: 'no_token', code: ERROR_CODES.refreshMissingAccessToken }, 400);
+    }
     try {
       let decoded: any;
       try {
         jwt.verify(token, JWT_SECRET as string);
+        logRefreshFailure({
+          cause: 'access_token_not_expired',
+          reason: 'not_expired',
+          status: 400,
+          code: ERROR_CODES.refreshAccessTokenNotExpired,
+          recoverable: true,
+          step: 'verify_jwt',
+        });
         return sendResponse(req, res, { ok: false, reason: 'not_expired' }, 400);
       } catch (err: any) {
         console.log('refresh-token verify error - name:', err && err.name, 'message:', err && err.message);
         if (!err || err.name !== 'TokenExpiredError') {
-          return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
+          logRefreshFailure({
+            cause: 'access_token_invalid',
+            reason: 'invalid_token',
+            status: 403,
+            code: ERROR_CODES.refreshAccessTokenInvalid,
+            recoverable: false,
+            step: 'verify_jwt',
+          });
+          return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.refreshAccessTokenInvalid }, 403);
         }
+        logRefreshFailure({
+          cause: 'access_token_expired',
+          reason: 'token_expired',
+          status: 401,
+          code: ERROR_CODES.refreshAccessTokenExpired,
+          recoverable: true,
+          step: 'verify_jwt',
+        });
         decoded = jwt.verify(token, JWT_SECRET as string, { ignoreExpiration: true });
       }
 
-      if (!decoded || !decoded._id) return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
-      if (decoded.userType === 'provisional') return sendResponse(req, res, { ok: false, reason: 'provisional_forbidden', code: ERROR_CODES.provisionalForbidden }, 403);
+      if (!decoded || !decoded._id) {
+        logRefreshFailure({
+          cause: 'access_token_invalid',
+          reason: 'invalid_token',
+          status: 403,
+          code: ERROR_CODES.refreshAccessTokenInvalid,
+          recoverable: false,
+          step: 'token_payload',
+        });
+        return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.refreshAccessTokenInvalid }, 403);
+      }
+      if (decoded.userType === 'provisional') {
+        logRefreshFailure({
+          cause: 'provisional_forbidden',
+          reason: 'provisional_forbidden',
+          status: 403,
+          code: ERROR_CODES.refreshProvisionalForbidden,
+          recoverable: false,
+          step: 'token_payload',
+        });
+        return sendResponse(req, res, { ok: false, reason: 'provisional_forbidden', code: ERROR_CODES.refreshProvisionalForbidden }, 403);
+      }
 
       // Require sessionId header for strict session scoping.
       // 厳格なセッション管理のためsessionIdヘッダを必須にする。
       const headerSessionId = requireSessionId(req);
       if (!headerSessionId) {
-        return sendResponse(req, res, { ok: false, reason: 'missing_session_id', code: ERROR_CODES.invalidToken }, 400);
+        logRefreshFailure({
+          cause: 'missing_session_id',
+          reason: 'missing_session_id',
+          status: 400,
+          code: ERROR_CODES.refreshMissingSessionId,
+          recoverable: true,
+          step: 'session_header',
+        });
+        return sendResponse(req, res, { ok: false, reason: 'missing_session_id', code: ERROR_CODES.refreshMissingSessionId }, 400);
       }
 
       const cookieHeader = req.headers?.cookie;
@@ -477,30 +600,107 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
         // Cookieヘッダが無い場合のみヘッダを利用する（非ブラウザ向け）。
         refreshCookie = getHeaderString(req, REFRESH_HEADER_NAME);
       }
-      if (!refreshCookie) return sendResponse(req, res, { ok: false, reason: 'no_refresh_secret', code: ERROR_CODES.invalidToken }, 401);
+      if (!refreshCookie) {
+        logRefreshFailure({
+          cause: 'missing_refresh_secret',
+          reason: 'no_refresh_secret',
+          status: 401,
+          code: ERROR_CODES.refreshMissingRefreshSecret,
+          recoverable: true,
+          step: 'refresh_secret',
+          sessionId: headerSessionId,
+        });
+        return sendResponse(req, res, { ok: false, reason: 'no_refresh_secret', code: ERROR_CODES.refreshMissingRefreshSecret }, 401);
+      }
 
       let refreshPayload: any;
       try {
         refreshPayload = jwt.verify(refreshCookie, REFRESH_SECRET_SIGNING_KEY as string, { algorithms: ['HS256'], ignoreExpiration: true });
       } catch (_e: any) {
         console.log('refresh-token refresh secret verify error - name:', _e && _e.name, 'message:', _e && _e.message);
-        return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.invalidToken }, 403);
+        logRefreshFailure({
+          cause: 'refresh_secret_invalid',
+          reason: 'refresh_secret_invalid',
+          status: 403,
+          code: ERROR_CODES.refreshSecretInvalid,
+          recoverable: false,
+          step: 'verify_refresh_secret',
+          sessionId: headerSessionId,
+          refreshSecret: refreshCookie,
+        });
+        return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.refreshSecretInvalid }, 403);
       }
       const payloadSessionId = normalizeSessionId(refreshPayload?.sid);
       if (!payloadSessionId) {
-        return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.invalidToken }, 403);
+        logRefreshFailure({
+          cause: 'refresh_secret_invalid',
+          reason: 'refresh_secret_invalid',
+          status: 403,
+          code: ERROR_CODES.refreshSecretInvalid,
+          recoverable: false,
+          step: 'refresh_payload',
+          sessionId: headerSessionId,
+          refreshSecret: refreshCookie,
+        });
+        return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.refreshSecretInvalid }, 403);
       }
       if (headerSessionId !== payloadSessionId) {
-        return sendResponse(req, res, { ok: false, reason: 'refresh_secret_mismatch', code: ERROR_CODES.invalidToken }, 403);
+        logRefreshFailure({
+          cause: 'refresh_secret_mismatch',
+          reason: 'refresh_secret_mismatch',
+          status: 403,
+          code: ERROR_CODES.refreshSecretMismatch,
+          recoverable: false,
+          step: 'session_match',
+          sessionId: headerSessionId,
+          refreshSecret: refreshCookie,
+        });
+        return sendResponse(req, res, { ok: false, reason: 'refresh_secret_mismatch', code: ERROR_CODES.refreshSecretMismatch }, 403);
       }
       const sessionId = headerSessionId;
 
       const userCol = getClient().db(USERS_DB_NAME as string).collection(USERS_COLLECTION as string);
       const subId = toObjectId(refreshPayload.sub);
-      if (!subId) return sendResponse(req, res, { ok: false, reason: 'invalid_token' }, 403);
+      if (!subId) {
+        logRefreshFailure({
+          cause: 'access_token_invalid',
+          reason: 'invalid_token',
+          status: 403,
+          code: ERROR_CODES.refreshAccessTokenInvalid,
+          recoverable: false,
+          step: 'token_subject',
+          sessionId,
+          refreshSecret: refreshCookie,
+        });
+        return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.refreshAccessTokenInvalid }, 403);
+      }
       const user = await userCol.findOne({ _id: subId });
-      if (!user) return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
-      if (String(decoded._id) !== String(user._id)) return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.invalidToken }, 403);
+      if (!user) {
+        logRefreshFailure({
+          cause: 'user_not_found',
+          reason: 'invalid_token',
+          status: 403,
+          code: ERROR_CODES.refreshUserNotFound,
+          recoverable: false,
+          step: 'user_lookup',
+          sessionId,
+          refreshSecret: refreshCookie,
+        });
+        return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.refreshUserNotFound }, 403);
+      }
+      if (String(decoded._id) !== String(user._id)) {
+        logRefreshFailure({
+          cause: 'token_user_mismatch',
+          reason: 'invalid_token',
+          status: 403,
+          code: ERROR_CODES.refreshTokenUserMismatch,
+          recoverable: false,
+          step: 'user_match',
+          sessionId,
+          refreshSecret: refreshCookie,
+        });
+        return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.refreshTokenUserMismatch }, 403);
+      }
 
       let session: RefreshSession | null = null;
       try {
@@ -509,18 +709,50 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
       } catch (err: any) {
         const reason = err?.message || 'refresh_secret_invalid';
         const status = reason === 'refresh_secret_expired' ? 401 : 403;
-        const code = reason === 'refresh_secret_expired' ? ERROR_CODES.tokenExpired : ERROR_CODES.invalidToken;
+        const code = reason === 'refresh_secret_expired' ? ERROR_CODES.refreshSecretExpired : ERROR_CODES.refreshSecretInvalid;
+        logRefreshFailure({
+          cause: reason,
+          reason,
+          status,
+          code,
+          recoverable: reason === 'refresh_secret_expired',
+          step: 'refresh_session',
+          sessionId,
+          refreshSecret: refreshCookie,
+        });
         return sendResponse(req, res, { ok: false, reason, code }, status);
       }
 
       const match = await bcrypt.compare(refreshPayload.rs, session?.refreshSecretHash || '');
-      if (!match) return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.invalidToken }, 403);
+      if (!match) {
+        logRefreshFailure({
+          cause: 'refresh_secret_invalid',
+          reason: 'refresh_secret_invalid',
+          status: 403,
+          code: ERROR_CODES.refreshSecretHashMismatch,
+          recoverable: false,
+          step: 'refresh_secret_hash',
+          sessionId,
+          refreshSecret: refreshCookie,
+        });
+        return sendResponse(req, res, { ok: false, reason: 'refresh_secret_invalid', code: ERROR_CODES.refreshSecretHashMismatch }, 403);
+      }
 
       const exp = decoded && decoded.exp ? Number(decoded.exp) : undefined;
       const now = Math.floor(Date.now() / 1000);
       const refreshWindow = REFRESH_WINDOW_SEC as number;
       if (refreshWindow > 0 && exp && now - exp > refreshWindow) {
-        return sendResponse(req, res, { ok: false, reason: 'refresh_window_exceeded', code: ERROR_CODES.refreshWindowExceeded }, 403);
+        logRefreshFailure({
+          cause: 'refresh_window_exceeded',
+          reason: 'refresh_window_exceeded',
+          status: 403,
+          code: ERROR_CODES.refreshWindowExceededFatal,
+          recoverable: false,
+          step: 'refresh_window',
+          sessionId,
+          refreshSecret: refreshCookie,
+        });
+        return sendResponse(req, res, { ok: false, reason: 'refresh_window_exceeded', code: ERROR_CODES.refreshWindowExceededFatal }, 403);
       }
 
       const { iat, exp: _exp, nbf, ...rest } = decoded as any;
@@ -531,7 +763,15 @@ function verifyJwtToken(token: string): { ok: true; payload: any } | { ok: false
       return sendResponse(req, res, { ok: true, token: newToken, expiresIn }, 200);
   } catch (err: any) {
     console.log('refresh-token unexpected error - name:', err && err.name, 'message:', err && err.message);
-    return sendResponse(req, res, { ok: false, reason: 'invalid_token' }, 500);
+    logRefreshFailure({
+      cause: 'unexpected_error',
+      reason: 'invalid_token',
+      status: 500,
+      code: ERROR_CODES.refreshUnexpectedError,
+      recoverable: false,
+      step: 'unexpected',
+    });
+    return sendResponse(req, res, { ok: false, reason: 'invalid_token', code: ERROR_CODES.refreshUnexpectedError }, 500);
   }
 });
 
@@ -673,6 +913,8 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
     app.use((req: any, res: any, next: any) => {
       const started = Date.now();
       res.on('finish', () => {
+        const isGate = (req.originalUrl || req.url || '').includes('/revlm-gate');
+        if (isGate) return;
         const locals = (res as any).locals || {};
         const body = locals.revlmResponse ? locals.revlmResponse.body : undefined;
         const ok = body && typeof body === 'object' ? (body as any).ok : undefined;
@@ -814,26 +1056,6 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
 
       const col = _db.collection(collection);
       if (!col) return sendResponse(req, res, { ok: false, error: 'Invalid collection parameter' }, 400);
-
-      if (shouldLog('debug')) {
-        const filterKeys = filter && typeof filter === 'object' ? Object.keys(filter) : undefined;
-        const updateKeys = update && typeof update === 'object' ? Object.keys(update) : undefined;
-        const documentKeys = document && typeof document === 'object' ? Object.keys(document) : undefined;
-        const optionsKeys = options && typeof options === 'object' ? Object.keys(options) : undefined;
-        const pipelineStages = Array.isArray(pipeline) ? pipeline.length : undefined;
-        const documentsCount = Array.isArray(documents) ? documents.length : undefined;
-        console.log('revlmGateDebug', {
-          db,
-          collection,
-          method,
-          filterKeys,
-          updateKeys,
-          documentKeys,
-          optionsKeys,
-          pipelineStages,
-          documentsCount,
-        });
-      }
 
       let result;
       switch (method) {

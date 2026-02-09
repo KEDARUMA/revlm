@@ -17,7 +17,6 @@ import {
   View,
 } from 'react-native';
 import type * as RevlmCompat from '@kedaruma/revlm-client/revlm-compat';
-import CookieManager from '@react-native-cookies/cookies';
 import { getEnv } from './src/lib/env';
 import { getRevlmClient } from './src/lib/revlmClient';
 import type { MoviesCombined } from './src/moviesCombinedTypes';
@@ -258,39 +257,6 @@ export default function App() {
     }
   };
 
-  const handleCookieTest = async () => {
-    // Validate Cookie write/read without login.
-    // ログイン不要でCookieの書き込み/読み込みを検証する。
-    const url = env.baseUrl;
-    const name = 'revlm_cookie_test';
-    const value = `rn_${Date.now()}`;
-    try {
-      await CookieManager.set(url, {
-        name,
-        value,
-        path: '/',
-        secure: true,
-        httpOnly: true,
-      });
-      const nativeJar = await CookieManager.get(url);
-      const webkitJar = await CookieManager.get(url, true);
-      const nativeValue = (nativeJar as any)?.[name]?.value ?? (nativeJar as any)?.[name];
-      const webkitValue = (webkitJar as any)?.[name]?.value ?? (webkitJar as any)?.[name];
-      const result = {
-        url,
-        name,
-        value,
-        nativeValue,
-        webkitValue,
-        nativeMatch: nativeValue === value,
-        webkitMatch: webkitValue === value,
-      };
-      console.log('[cookie-test] result', result, JSON.stringify(result));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.log('[cookie-test] error', { url, name }, message);
-    }
-  };
 
   const runGateDemo = async () => {
     if (!isLoggedIn) return;
@@ -517,11 +483,6 @@ export default function App() {
                   disabled={!env.provisionalLoginEnabled}
                 >
                   <Text style={styles.buttonGhostText}>Create account</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.buttonRow}>
-                <TouchableOpacity style={[styles.button, styles.buttonGhost]} onPress={handleCookieTest}>
-                  <Text style={styles.buttonGhostText}>Cookie test</Text>
                 </TouchableOpacity>
               </View>
               {loginError ? <Text style={styles.errorText}>{loginError}</Text> : null}

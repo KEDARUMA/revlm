@@ -8,7 +8,8 @@
 import {deleteUserRaw, ServerConfig, startServer, stopServer} from '@kedaruma/revlm-server/server';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import http, { Server } from 'http';
-import {AuthClient} from "@kedaruma/revlm-shared/auth-token";
+import { AuthClient } from "@kedaruma/revlm-shared/auth-token";
+import { randomBytes as nodeRandomBytes } from "crypto";
 import request from "supertest";
 import { EJSON } from 'bson';
 
@@ -145,6 +146,7 @@ export async function createTestUser(options: CreateTestUserOptions): Promise<vo
     const provisionalClient = new AuthClient({
       secretMaster: provisionalAuthSecretMaster,
       authDomain: provisionalAuthDomain,
+      randomBytes: (length) => new Uint8Array(nodeRandomBytes(length)),
     });
     const provisionalPassword = await provisionalClient.producePassword(provisionalAuthId);
 

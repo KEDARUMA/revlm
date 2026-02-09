@@ -1,6 +1,4 @@
 import { Revlm } from '@kedaruma/revlm-client/revlm-compat';
-import CookieManager from '@react-native-cookies/cookies';
-import setCookieParser from 'set-cookie-parser';
 import { getEnv } from './env';
 
 let cachedClient: Revlm | null = null;
@@ -12,22 +10,6 @@ export function getRevlmClient(): Revlm {
   // keep refresh cookie raw value to bypass native store mutation.
   // refresh cookieの生値を保持してネイティブストアの変形を回避する。
   let refreshCookieOverride: string | undefined;
-  // Detailed cookie debugging helpers.
-  // Cookieの詳細デバッグ用ヘルパー。
-  const toLogString = (value: unknown): string => {
-    if (value instanceof Error) {
-      return JSON.stringify({
-        name: value.name,
-        message: value.message,
-        stack: value.stack,
-      });
-    }
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  };
   const normalizeCookieValue = (value?: string) => {
     if (!value) return value;
     if (value.startsWith('"') && value.endsWith('"') && value.length > 1) {
@@ -35,161 +17,15 @@ export function getRevlmClient(): Revlm {
     }
     return value;
   };
-  const splitSetCookie = (raw: string): string[] => {
-    const parser = setCookieParser as unknown as {
-      splitCookiesString?: (value: string) => string[];
-    };
-    if (parser?.splitCookiesString) return parser.splitCookiesString(raw);
-    return [raw];
-  };
-
-  // Use CookieManager methods with optional WebKit flag.
-  // WebKitフラグ対応のCookieManager呼び出し。
-  const setFromResponse = (CookieManager as any).setFromResponse as (
-    url: string,
-    cookie: string,
-    useWebKit?: boolean
-  ) => Promise<void>;
-  const setCookie = (CookieManager as any).set as (
-    url: string,
-    cookie: {
-      name: string;
-      value: string;
-      domain?: string;
-      path?: string;
-      expires?: string;
-      secure?: boolean;
-      httpOnly?: boolean;
-    },
-    useWebKit?: boolean
-  ) => Promise<void>;
-
   const cookieStore = {
-    // Provide Cookie header from native cookie store.
-    // ネイティブCookieストアからCookieヘッダを生成する。
+    // Dummy cookie store for /cookie-check only.
+    // /cookie-check 用のダミーCookieストア。
     getCookieHeader: async (url: string) => {
-      try {
-        if (url.includes('/refresh-token') && refreshCookieOverride) {
-          return `revlm_refresh=${refreshCookieOverride}`;
-        }
-        const readJar = async (useWebKit: boolean) => {
-          try {
-            const jar = await CookieManager.get(url, useWebKit);
-            return jar || {};
-          } catch (err: unknown) {
-            console.log('[cookie] getCookieHeader jar error', { url, useWebKit }, toLogString(err));
-            return {};
-          }
-        };
-        let jar = await readJar(false);
-        let entries = Object.entries(jar || {});
-        if (!entries.length) {
-          // Fallback to WebKit cookie store when native store is empty.
-          // ネイティブストアが空の場合、WebKitストアも参照する。
-          jar = await readJar(true);
-          entries = Object.entries(jar || {});
-        }
-        if (!entries.length) return undefined;
-        const header = entries
-          .map(([name, data]) => {
-            const rawValue = typeof data === 'string' ? data : data?.value;
-            const value = normalizeCookieValue(rawValue);
-            return value ? `${name}=${value}` : '';
-          })
-          .filter(Boolean)
-          .join('; ');
-        return header || undefined;
-      } catch (err: unknown) {
-        console.log('[cookie] getCookieHeader error', { url, err });
-        return undefined;
-      }
+      if (!url.includes('/cookie-check')) return undefined;
+      return 'revlm_cookie_check=1';
     },
-    // Save Set-Cookie into native cookie store.
-    // Set-CookieをネイティブCookieストアへ保存する。
-    setCookie: async (url: string, setCookieHeader: string) => {
-      try {
-        const cookies = splitSetCookie(setCookieHeader);
-        const parseCookieForSet = (raw: string) => {
-          const parts = raw.split(';').map((part) => part.trim());
-          const [nameValue, ...attrs] = parts;
-          if (!nameValue) return null;
-          const eq = nameValue.indexOf('=');
-          if (eq === -1) return null;
-          const name = nameValue.slice(0, eq);
-          const value = nameValue.slice(eq + 1);
-          const parsed: {
-            name: string;
-            value: string;
-            domain?: string;
-            path?: string;
-            expires?: string;
-            secure?: boolean;
-            httpOnly?: boolean;
-          } = {
-            name,
-            value,
-          };
-          for (const attr of attrs) {
-            const [key, ...rest] = attr.split('=');
-            const normalizedKey = key.toLowerCase();
-            const attrValue = rest.join('=');
-            if (normalizedKey === 'domain') parsed.domain = attrValue;
-            if (normalizedKey === 'path') parsed.path = attrValue;
-            if (normalizedKey === 'expires') {
-              const expires = new Date(attrValue);
-              if (!Number.isNaN(expires.getTime())) {
-                parsed.expires = expires.toISOString();
-              }
-            }
-            if (normalizedKey === 'max-age') {
-              const seconds = Number(attrValue);
-              if (!Number.isNaN(seconds)) {
-                parsed.expires = new Date(Date.now() + seconds * 1000).toISOString();
-              }
-            }
-            if (normalizedKey === 'secure') parsed.secure = true;
-            if (normalizedKey === 'httponly') parsed.httpOnly = true;
-          }
-          return parsed;
-        };
-        for (const cookie of cookies) {
-          const parsedForOverride = parseCookieForSet(cookie);
-          if (parsedForOverride?.name === 'revlm_refresh' && parsedForOverride.value) {
-            refreshCookieOverride = normalizeCookieValue(parsedForOverride.value);
-          }
-          try {
-            // Also write to WebKit store for consistency across APIs.
-            // WebKitストアにも書き込み、API間の差を吸収する。
-            await setFromResponse(url, cookie);
-            await setFromResponse(url, cookie, true);
-          } catch (err: unknown) {
-            console.log('[cookie] setFromResponse error', { url, cookie }, toLogString(err));
-            // Fallback to manual cookie parsing + set.
-            // 手動パースして CookieManager.set にフォールバック。
-            const parsed = parseCookieForSet(cookie);
-            if (!parsed) {
-              continue;
-            }
-            try {
-              await setCookie(url, parsed);
-              await setCookie(url, parsed, true);
-            } catch (fallbackErr: unknown) {
-              console.log(
-                '[cookie] setFallback error',
-                {
-                  url,
-                  name: parsed.name,
-                  valueLen: parsed.value.length,
-                },
-                toLogString(fallbackErr)
-              );
-            }
-          }
-        }
-      } catch (err: unknown) {
-        console.log('[cookie] setCookie error', { url }, toLogString(err));
-      }
-    },
+    // RNではCookie保存を行わない。
+    setCookie: async () => {},
   };
 
   // Fetch wrapper for request/response logging.
@@ -209,8 +45,8 @@ export function getRevlmClient(): Revlm {
     const headers = Object.fromEntries(baseHeaders.entries()) as Record<string, string>;
     const isRefreshRequest = url.includes('/refresh-token');
     if (isRefreshRequest && refreshCookieOverride) {
-      // Send refresh secret via header when Cookie header is absent.
-      // Cookieヘッダが無い前提でリフレッシュ秘密をヘッダ送信する。
+      // Send refresh secret via header when Cookie is not used.
+      // Cookieを使わない前提でリフレッシュ秘密をヘッダ送信する。
       headers['x-revlm-refresh'] = refreshCookieOverride;
       delete headers.cookie;
     }

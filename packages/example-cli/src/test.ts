@@ -144,26 +144,17 @@ function createRefreshSecretStore() {
 }
 
 // Cookie store that only supports /cookie-check endpoints.
-// /cookie-check のみ対応するCookieストア。
+// /cookie-check のみ通すためのダミーCookieストア。
 function createCookieCheckStore(): RevlmCompat.CookieStore {
-  let cookieHeader: string | undefined;
+  const cookieHeader = 'revlm_cookie_check=1';
   return {
     getCookieHeader: (url) => {
-      if (!cookieHeader) return undefined;
       if (!url.includes('/cookie-check')) return undefined;
       return cookieHeader;
     },
-    setCookie: (_url, setCookieHeader) => {
-      if (!setCookieHeader) return;
-      const [cookiePair] = setCookieHeader.split(';');
-      if (!cookiePair) return;
-      const sep = cookiePair.indexOf('=');
-      if (sep === -1) return;
-      const name = cookiePair.slice(0, sep).trim();
-      const value = cookiePair.slice(sep + 1).trim();
-      if (!name || !value) return;
-      cookieHeader = `${name}=${value}`;
-    },
+    // Intentionally ignore server cookies in the CLI.
+    // CLIではサーバーからのCookieを保持しない。
+    setCookie: () => {},
   };
 }
 

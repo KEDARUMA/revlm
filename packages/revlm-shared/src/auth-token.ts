@@ -96,19 +96,55 @@ export class AuthClient {
   private secretMaster: string;
   private authDomain: string;
   private hkdfInfo: Uint8Array;
+  private randomBytesImpl: (length: number) => Uint8Array;
 
-  constructor(opts: { secretMaster: string; authDomain: string; hkdfInfo?: Uint8Array }) {
+  private static resolveRandomBytes(): (length: number) => Uint8Array {
+    // Prefer global crypto.getRandomValues (Web/RN).
+    // Web/RN では globalThis.crypto.getRandomValues を優先。
+    const globalCrypto = (globalThis as any)?.crypto;
+    if (globalCrypto && typeof globalCrypto.getRandomValues === 'function') {
+      return (length: number) => {
+        const out = new Uint8Array(length);
+        globalCrypto.getRandomValues(out);
+        return out;
+      };
+    }
+
+    // Node/Express fallback.
+    // Node/Express では crypto.randomBytes を使用。
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const nodeCrypto = require('crypto') as { randomBytes?: (size: number) => Uint8Array | Buffer };
+      if (nodeCrypto?.randomBytes) {
+        return (length: number) => new Uint8Array(nodeCrypto.randomBytes!(length));
+      }
+    } catch {
+      // ignore: throw below if nothing available
+    }
+
+    throw new Error('No secure random source available. Provide randomBytes explicitly.');
+  }
+
+  constructor(opts: {
+    secretMaster: string;
+    authDomain: string;
+    hkdfInfo?: Uint8Array;
+    randomBytes?: (length: number) => Uint8Array;
+  }) {
     this.secretMaster = opts.secretMaster;
     this.authDomain = opts.authDomain;
     this.hkdfInfo = opts.hkdfInfo ?? textEncoder.encode(`auth-v1|${this.authDomain}`);
+    // Allow platform-specific random source injection.
+    // プラットフォーム固有の乱数実装を外部から差し込めるようにする。
+    this.randomBytesImpl = opts.randomBytes ?? AuthClient.resolveRandomBytes();
   }
 
   async producePassword(deviceId?: string): Promise<string> {
     const master = textEncoder.encode(this.secretMaster);
     const key = await hkdfDeriveKeyRaw(master, this.hkdfInfo, 32);
-    const iv = randomBytes(12);
+    const iv = this.randomBytesImpl(12);
     const ts = Math.floor(Date.now() / 1000);
-    const nonceBytes = randomBytes(16);
+    const nonceBytes = this.randomBytesImpl(16);
     const nonce = b64urlEncode(nonceBytes);
     const payload: Payload = (typeof deviceId === 'string') ? { ts, nonce, deviceId } : { ts, nonce };
     const aad = this.hkdfInfo;

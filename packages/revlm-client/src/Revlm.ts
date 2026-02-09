@@ -200,6 +200,42 @@ export default class Revlm {
     if (this.canLog('debug')) console.log(...args);
   }
 
+  private maskSecret(value?: string, head = 10, tail = 6): string {
+    if (!value) return '<empty>';
+    if (value.length <= head + tail) return value;
+    return `${value.slice(0, head)}***${value.slice(-tail)}`;
+  }
+
+  private extractRefreshSecret(cookieHeader?: string): string | undefined {
+    if (!cookieHeader) return undefined;
+    const match = cookieHeader.match(/(?:^|;\\s*)revlm_refresh=([^;]+)/);
+    return match?.[1];
+  }
+
+  private logRefreshFailureClient(params: {
+    cause: string;
+    reason?: string;
+    status?: number;
+    code?: number;
+    sessionId?: string;
+    refreshSecret?: string;
+  }) {
+    const recoverable = typeof params.code === 'number'
+      ? params.code >= 10000 && params.code < 20000
+      : params.status === 400 || params.status === 401;
+    const line1 = `[refresh-token][${recoverable ? 'debug' : 'error'}][${recoverable ? 'recoverable' : 'fatal'}] cause=${params.cause}`;
+    const line2 = `session=${this.maskSecret(params.sessionId)} refresh=${this.maskSecret(params.refreshSecret)}`;
+    const line3 = `details=${JSON.stringify({
+      status: params.status,
+      reason: params.reason,
+      code: params.code,
+    })}`;
+    this.logError(line1);
+    this.logError(line2);
+    this.logError(line3);
+    this.logError('');
+  }
+
   setToken(token: string) {
     this._token = token;
   }
@@ -372,11 +408,33 @@ export default class Revlm {
             reason: (refreshRes as any).reason,
             status: refreshRes.status,
             error: refreshRes.error,
+            code: (refreshRes as any).code,
           };
           this.logDebug('### refresh failed:', refreshFailed, JSON.stringify(refreshFailed));
+          const refreshUrl = `${this.baseUrl}/refresh-token`;
+          const cookieHeader = await this.cookieStore?.getCookieHeader?.(refreshUrl);
+          const refreshSecret = this.extractRefreshSecret(cookieHeader);
+          const refreshFailureLog: {
+            cause: string;
+            reason?: string;
+            status?: number;
+            code?: number;
+            sessionId?: string;
+            refreshSecret?: string;
+          } = {
+            cause: (refreshRes as any).reason || 'refresh_failed',
+            reason: refreshFailed.reason,
+            status: refreshFailed.status,
+            code: refreshFailed.code,
+          };
+          if (sessionId) refreshFailureLog.sessionId = sessionId;
+          if (refreshSecret) refreshFailureLog.refreshSecret = refreshSecret;
+          this.logRefreshFailureClient(refreshFailureLog);
           if ((refreshRes as any).reason === 'no_refresh_secret') {
             const missingError = new Error('Refresh cookie missing. Provide a cookie-aware fetch implementation for Node/RN.');
             (missingError as any).revlmReason = 'no_refresh_secret';
+            (missingError as any).revlmCode = (refreshRes as any).code;
+            (missingError as any).httpStatus = refreshRes.status;
             throw missingError;
           }
         }
