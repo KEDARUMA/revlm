@@ -82,7 +82,7 @@ importers:
     dependencies:
       '@kedaruma/revlm-client':
         specifier: latest
-        version: 1.0.58
+        version: 1.0.62
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
@@ -95,7 +95,7 @@ importers:
     dependencies:
       '@kedaruma/revlm-client':
         specifier: latest
-        version: 1.0.58
+        version: 1.0.62
       '@kedaruma/revlm-shared':
         specifier: ^1.0.10
         version: 1.0.10
@@ -177,10 +177,10 @@ importers:
     dependencies:
       '@kedaruma/revlm-server':
         specifier: latest
-        version: 1.0.54(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
+        version: 1.0.61(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
       '@kedaruma/revlm-shared':
         specifier: latest
-        version: 1.0.11
+        version: 1.0.12
       csv-parse:
         specifier: ^6.1.0
         version: 6.1.0
@@ -208,7 +208,7 @@ importers:
     dependencies:
       '@kedaruma/revlm-client':
         specifier: latest
-        version: 1.0.58
+        version: 1.0.62
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
@@ -1563,17 +1563,17 @@ packages:
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
 
-  '@kedaruma/revlm-client@1.0.58':
-    resolution: {integrity: sha512-drz/k5bQjUS4cCRu80Ao8ZVGhQFurn1ojlEOUzygtY0YvQTmPwOBv4izNLE/TMyqh1JwLOYcVDKOIM3HcBPAYQ==}
+  '@kedaruma/revlm-client@1.0.62':
+    resolution: {integrity: sha512-2ud2fWQpEN31QtNomV5DQybjcM/lI4RvRLtGVFII9+16+KMuud8tAm9cewyWnhrX11XJhcxre7z0JU6ppgPFbQ==}
 
-  '@kedaruma/revlm-server@1.0.54':
-    resolution: {integrity: sha512-8zg393Ex90sCPLZnIfko5Xj1D5cko/zm3IzmAEe9+9I33xHzNmu1q754UGVZlnX6hkvf+yRqog8Te5K1r3x8DA==}
+  '@kedaruma/revlm-server@1.0.61':
+    resolution: {integrity: sha512-v9whF7RZQsDw+Dvi34qqfQTweuY3lGCACREE8VRtEVNgwEKrEhJARGIHxhMb6YAXdTiFsfctWr9q5hzBSjMX0g==}
 
   '@kedaruma/revlm-shared@1.0.10':
     resolution: {integrity: sha512-jKCrwQgZq8xxanc48SswMNMissyth5tlL+fuFWIzPTSySz/l76tOmCfUgk3qhN/p+/iWnpI6fSO2ysp/7kD41w==}
 
-  '@kedaruma/revlm-shared@1.0.11':
-    resolution: {integrity: sha512-UmZFTLk/a9ZeYydxIaKSZ0yJt6hxpn3MXGInmOj4gntmI/KhaaO6+2DoJI9HGAHgKQGZcD+dCI3PY1T8OGkZkw==}
+  '@kedaruma/revlm-shared@1.0.12':
+    resolution: {integrity: sha512-6gZ+uPa/7iGi4QRmper2FjyW0rQwVluUSzOa38Aqkuw5igpWQ0Vdh+q1gXK3tMWsAaRNzyLIuzv7o/PIDCdrPQ==}
 
   '@mongodb-js/saslprep@1.3.2':
     resolution: {integrity: sha512-QgA5AySqB27cGTXBFmnpifAi7HxoGUeezwo6p9dI03MuDB6Pp33zgclqVb6oVK3j6I9Vesg0+oojW2XxB59SGg==}
@@ -7973,15 +7973,15 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@kedaruma/revlm-client@1.0.58':
+  '@kedaruma/revlm-client@1.0.62':
     dependencies:
-      '@kedaruma/revlm-shared': 1.0.10
+      '@kedaruma/revlm-shared': 1.0.12
       bson: 6.10.4
       dotenv: 17.2.3
 
-  '@kedaruma/revlm-server@1.0.54(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
+  '@kedaruma/revlm-server@1.0.61(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
     dependencies:
-      '@kedaruma/revlm-shared': 1.0.10
+      '@kedaruma/revlm-shared': 1.0.12
       bcrypt: 6.0.0
       bson: 6.10.4
       cors: 2.8.5
@@ -8005,7 +8005,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       bson: 6.10.4
 
-  '@kedaruma/revlm-shared@1.0.11':
+  '@kedaruma/revlm-shared@1.0.12':
     dependencies:
       '@noble/ciphers': 1.3.0
       '@noble/hashes': 1.8.0
