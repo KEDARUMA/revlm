@@ -123,56 +123,9 @@ async function stopExampleServer(processInfo: ServerProcess) {
   });
 }
 
-// In-memory refresh secret store for CLI (header-based refresh).
-// CLI向けのリフレッシュシークレット保持（ヘッダ方式）。
-function createRefreshSecretStore() {
-  let refreshSecret: string | undefined;
-  return {
-    get: () => refreshSecret,
-    setFromSetCookie: (setCookieHeader?: string | null) => {
-      if (!setCookieHeader) return;
-      const [cookiePair] = setCookieHeader.split(';');
-      if (!cookiePair) return;
-      const sep = cookiePair.indexOf('=');
-      if (sep === -1) return;
-      const name = cookiePair.slice(0, sep).trim();
-      if (name !== 'revlm_refresh') return;
-      refreshSecret = cookiePair.slice(sep + 1).trim();
-    },
-  };
-}
-
-// Fetch wrapper to capture refresh secret and send it via header.
-// refresh シークレットを保持してヘッダ送信する fetch ラッパー。
-function createFetchImpl(refreshStore: { get: () => string | undefined; setFromSetCookie: (value?: string | null) => void }): typeof fetch {
-  return async (input, init) => {
-    const url = typeof input === 'string' ? input : (input as Request).url;
-    const headers = new Headers(init?.headers || {});
-    if (url.includes('/refresh-token')) {
-      const refreshSecret = refreshStore.get();
-      if (refreshSecret) {
-        headers.set('x-revlm-refresh', refreshSecret);
-      }
-      headers.delete('cookie');
-    }
-    const res = await fetch(input, { ...init, headers });
-    try {
-      const setCookieHeader = (res.headers as any)?.getSetCookie?.() ?? res.headers.get('set-cookie');
-      const raw = Array.isArray(setCookieHeader) ? setCookieHeader.join(',') : setCookieHeader;
-      refreshStore.setFromSetCookie(raw);
-    } catch {
-      // noop
-      // 何もしない。
-    }
-    return res;
-  };
-}
-
 // Create a client configured for the CLI refresh flow.
 // CLIのリフレッシュフロー用クライアントを作成する。
 function createExampleClient(options: ExampleClientOptions) {
-  const refreshStore = createRefreshSecretStore();
-  const fetchImpl = createFetchImpl(refreshStore);
   // Use Node crypto for AuthClient.
   // AuthClient 用に Node crypto を使う。
   return new Revlm(options.baseUrl, {
@@ -182,7 +135,6 @@ function createExampleClient(options: ExampleClientOptions) {
     autoSetToken: true,
     autoRefreshOn401: options.autoRefreshOn401,
     sessionId: options.sessionId,
-    fetchImpl,
     logLevel: 'info',
   });
 }

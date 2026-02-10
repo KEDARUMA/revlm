@@ -9,11 +9,6 @@ export function getRevlmClient(): Revlm {
   if (cachedClient) return cachedClient;
 
   const env = getEnv();
-  const fetchImpl: typeof fetch = (input, init) =>
-    fetch(input, {
-      ...init,
-      credentials: "include",
-    });
   cachedClient = new Revlm(env.baseUrl, {
     provisionalEnabled: env.provisionalLoginEnabled,
     provisionalAuthSecretMaster: env.provisionalAuthSecretMaster,
@@ -21,7 +16,6 @@ export function getRevlmClient(): Revlm {
     sessionId: env.sessionId,
     autoSetToken: true,
     autoRefreshOn401: env.autoRefreshOn401,
-    fetchImpl,
     logLevel: env.logLevel,
   });
 

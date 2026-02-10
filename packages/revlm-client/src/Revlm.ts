@@ -72,6 +72,15 @@ function getRevlmClientVersion(): string {
   return typeof globalVersion === 'string' ? globalVersion : 'unknown';
 }
 
+function resolveFetchImpl(fetchImpl?: typeof fetch): typeof fetch {
+  if (fetchImpl) return fetchImpl;
+  const globalFetch = (globalThis as any)?.fetch;
+  if (typeof globalFetch === 'function') {
+    return globalFetch.bind(globalThis) as typeof fetch;
+  }
+  throw new Error('No fetch implementation available. Provide fetchImpl in options or run in Node 18+ with global fetch.');
+}
+
 export type RevlmOptions = {
   fetchImpl?: typeof fetch;
   defaultHeaders?: Record<string, string>;
@@ -127,7 +136,7 @@ export default class Revlm {
   constructor(baseUrl: string, opts: RevlmOptions = {}) {
     if (!baseUrl) throw new Error('baseUrl is required');
     this.baseUrl = baseUrl.replace(/\/$/, '');
-    this.fetchImpl = opts.fetchImpl || (typeof fetch !== 'undefined' ? fetch : (undefined as any));
+    this.fetchImpl = resolveFetchImpl(opts.fetchImpl);
     this.defaultHeaders = opts.defaultHeaders || {};
     this.provisionalEnabled = opts.provisionalEnabled || false;
     this.provisionalAuthSecretMaster = opts.provisionalAuthSecretMaster || '';
@@ -138,10 +147,6 @@ export default class Revlm {
     this.sessionId = opts.sessionId;
     this.sessionIdProvider = opts.sessionIdProvider;
     this.stateStore = opts.stateStore;
-
-    if (!this.fetchImpl) {
-      throw new Error('No fetch implementation available. Provide fetchImpl in options or run in Node 18+ with global fetch.');
-    }
 
     this.logInfo('🚀 Revlm Client Init', {
       version: getRevlmClientVersion(),
@@ -409,6 +414,7 @@ export default class Revlm {
         method,
         headers: signedHeaders,
         body: serializedBody,
+        credentials: url.includes('/refresh-token') && this.refreshMode === 'header' ? 'omit' : 'include',
       } as any);
       await this.updateRefreshSecretFromResponse(res);
       const parsed = await this.parseResponse(res);

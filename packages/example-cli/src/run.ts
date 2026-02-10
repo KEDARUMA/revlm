@@ -51,58 +51,13 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// In-memory refresh secret store for CLI (header-based refresh).
-// CLI向けのリフレッシュシークレット保持（ヘッダ方式）。
-function createRefreshSecretStore() {
-  let refreshSecret: string | undefined;
-  return {
-    get: () => refreshSecret,
-    setFromSetCookie: (setCookieHeader?: string | null) => {
-      if (!setCookieHeader) return;
-      const [cookiePair] = setCookieHeader.split(';');
-      if (!cookiePair) return;
-      const sep = cookiePair.indexOf('=');
-      if (sep === -1) return;
-      const name = cookiePair.slice(0, sep).trim();
-      if (name !== 'revlm_refresh') return;
-      refreshSecret = cookiePair.slice(sep + 1).trim();
-    },
-  };
-}
-
-// Fetch wrapper to capture refresh secret and send it via header.
-// refresh シークレットを保持してヘッダ送信する fetch ラッパー。
-function createFetchImpl(refreshStore: { get: () => string | undefined; setFromSetCookie: (value?: string | null) => void }): typeof fetch {
-  return async (input, init) => {
-    const url = typeof input === 'string' ? input : (input as Request).url;
-    const headers = new Headers(init?.headers || {});
-    if (url.includes('/refresh-token')) {
-      const refreshSecret = refreshStore.get();
-      if (refreshSecret) {
-        headers.set('x-revlm-refresh', refreshSecret);
-      }
-      headers.delete('cookie');
-    }
-    const res = await fetch(input, { ...init, headers });
-    try {
-      const setCookieHeader = (res.headers as any)?.getSetCookie?.() ?? res.headers.get('set-cookie');
-      const raw = Array.isArray(setCookieHeader) ? setCookieHeader.join(',') : setCookieHeader;
-      refreshStore.setFromSetCookie(raw);
-    } catch {
-      // noop
-      // 何もしない。
-    }
-    return res;
-  };
-}
-
 export async function runExampleFlow(options: FlowOptions) {
   // Human-friendly progress markers for demo output.
   // デモ出力として分かりやすい進捗ログ。
   const log = (...args: any[]) => console.log('[example-cli]', ...args);
 
-  // Prepare client + refresh header support.
-  // refresh ヘッダ送信のための準備。
+  // Prepare client.
+  // クライアントの準備。
   //
   // Note:
   // - `sessionId` is REQUIRED by the server for login/refresh in the current design.
@@ -111,8 +66,6 @@ export async function runExampleFlow(options: FlowOptions) {
   // 注意:
   // - 現設計では server 側が login/refresh で `sessionId` を必須としている。
   // - CLI ではデモの再現性を優先して固定 sessionId を使う。
-  const refreshStore = createRefreshSecretStore();
-  const fetchImpl = createFetchImpl(refreshStore);
   // Use Node crypto for AuthClient.
   // AuthClient 用に Node crypto を使う。
   const revlm = new Revlm(options.baseUrl, {
@@ -122,7 +75,6 @@ export async function runExampleFlow(options: FlowOptions) {
     autoSetToken: true,
     autoRefreshOn401: !!options.autoRefreshOn401,
     sessionId: options.sessionId,
-    fetchImpl,
     logLevel: 'info',
   });
 
