@@ -16,10 +16,8 @@ const LOG_LEVEL_RANK: Record<LogLevel, number> = {
 };
 
 const SESSION_HEADER_NAME = 'x-revlm-session-id';
-
-export type CookieStore = {
-  getCookieHeader: (url: string) => string | undefined | Promise<string | undefined>;
-  setCookie: (url: string, setCookieHeader: string) => void | Promise<void>;
+const STATE_STORE_KEYS = {
+  refreshSecret: 'refreshSecret',
 };
 
 function normalizeLogLevel(value?: string): LogLevel {
@@ -77,10 +75,12 @@ function getRevlmClientVersion(): string {
 export type RevlmOptions = {
   fetchImpl?: typeof fetch;
   defaultHeaders?: Record<string, string>;
+  stateStore?: RevlmStateStore;
   // provisional (optional) client-side configuration
   provisionalEnabled?: boolean;
   provisionalAuthSecretMaster?: string;
   provisionalAuthDomain?: string;
+  randomBytes: (length: number) => Uint8Array;
   // automatically set token returned from login/provisionalLogin into the client
   autoSetToken?: boolean;
   // automatically refresh on 401 once and retry the original request
@@ -89,7 +89,12 @@ export type RevlmOptions = {
   logLevel?: LogLevel;
   sessionId?: string;
   sessionIdProvider?: () => string | Promise<string>;
-  cookieStore?: CookieStore;
+};
+
+export type RevlmStateStore = {
+  get: (key: string) => Promise<string | undefined>;
+  set: (key: string, value: string) => Promise<void>;
+  remove: (key: string) => Promise<void>;
 };
 
 export type RevlmResponse<T = any> = {
@@ -116,7 +121,10 @@ export default class Revlm {
   private refreshPromise: Promise<RevlmResponse> | undefined;
   private sessionId: string | undefined;
   private sessionIdProvider: (() => string | Promise<string>) | undefined;
-  private cookieStore: CookieStore | undefined;
+  private randomBytesImpl: (length: number) => Uint8Array;
+  private refreshSecret: string | undefined;
+  private refreshMode: 'unknown' | 'cookie' | 'header' = 'unknown';
+  private stateStore?: RevlmStateStore;
 
   constructor(baseUrl: string, opts: RevlmOptions = {}) {
     if (!baseUrl) throw new Error('baseUrl is required');
@@ -131,7 +139,8 @@ export default class Revlm {
     this.logLevel = normalizeLogLevel(opts.logLevel);
     this.sessionId = opts.sessionId;
     this.sessionIdProvider = opts.sessionIdProvider;
-    this.cookieStore = opts.cookieStore;
+    this.randomBytesImpl = opts.randomBytes;
+    this.stateStore = opts.stateStore;
 
     if (!this.fetchImpl) {
       throw new Error('No fetch implementation available. Provide fetchImpl in options or run in Node 18+ with global fetch.');
@@ -163,20 +172,36 @@ export default class Revlm {
     this.sessionId = generateSessionId();
     return this.sessionId;
   }
-
-  private async applyCookieStore(headers: Record<string, string>, url: string): Promise<void> {
-    const existing = (headers as any).cookie || (headers as any).Cookie;
-    if (!this.cookieStore || existing) return;
-    const cookieHeader = await this.cookieStore.getCookieHeader(url);
-    if (cookieHeader) headers.cookie = cookieHeader;
+  private normalizeCookieValue(value?: string): string | undefined {
+    if (!value) return undefined;
+    return value.replace(/^"+|"+$/g, '');
   }
 
-  private async storeSetCookies(res: Response, url: string): Promise<void> {
-    if (!this.cookieStore) return;
+  private async updateRefreshSecretFromResponse(res: Response): Promise<void> {
     const setCookies = getSetCookieHeaders(res);
     if (!setCookies.length) return;
     for (const setCookie of setCookies) {
-      await this.cookieStore.setCookie(url, setCookie);
+      const match = setCookie.match(/revlm_refresh=([^;]+)/);
+      if (match && match[1]) {
+        const normalized = this.normalizeCookieValue(match[1]);
+        this.refreshSecret = normalized;
+        if (this.stateStore && normalized) {
+          await this.stateStore.set(STATE_STORE_KEYS.refreshSecret, normalized);
+        }
+      }
+    }
+  }
+
+  private async ensureRefreshSecretLoaded(): Promise<void> {
+    if (this.refreshSecret || !this.stateStore) return;
+    const stored = await this.stateStore.get(STATE_STORE_KEYS.refreshSecret);
+    if (stored) this.refreshSecret = stored;
+  }
+
+  private async clearRefreshSecret(): Promise<void> {
+    this.refreshSecret = undefined;
+    if (this.stateStore) {
+      await this.stateStore.remove(STATE_STORE_KEYS.refreshSecret);
     }
   }
 
@@ -204,12 +229,6 @@ export default class Revlm {
     if (!value) return '<empty>';
     if (value.length <= head + tail) return value;
     return `${value.slice(0, head)}***${value.slice(-tail)}`;
-  }
-
-  private extractRefreshSecret(cookieHeader?: string): string | undefined {
-    if (!cookieHeader) return undefined;
-    const match = cookieHeader.match(/(?:^|;\\s*)revlm_refresh=([^;]+)/);
-    return match?.[1];
   }
 
   private logRefreshFailureClient(params: {
@@ -377,7 +396,12 @@ export default class Revlm {
     const headers = this.makeHeaders(hasBody);
     const sessionId = await this.resolveSessionId();
     if (sessionId) headers[SESSION_HEADER_NAME] = sessionId;
-    await this.applyCookieStore(headers, url);
+    if (url.includes('/refresh-token') && this.refreshMode === 'header') {
+      await this.ensureRefreshSecretLoaded();
+      if (this.refreshSecret) {
+        headers['x-revlm-refresh'] = this.refreshSecret;
+      }
+    }
     let serializedBody: string | undefined;
     if (hasBody) {
       serializedBody = EJSON.stringify(body);
@@ -389,7 +413,7 @@ export default class Revlm {
         headers: signedHeaders,
         body: serializedBody,
       } as any);
-      await this.storeSetCookies(res, signedUrl);
+      await this.updateRefreshSecretFromResponse(res);
       const parsed = await this.parseResponse(res);
       const out: RevlmResponse = (parsed && typeof parsed === 'object') ? parsed : { ok: res.ok, result: parsed };
       out.status = res.status;
@@ -411,9 +435,7 @@ export default class Revlm {
             code: (refreshRes as any).code,
           };
           this.logDebug('### refresh failed:', refreshFailed, JSON.stringify(refreshFailed));
-          const refreshUrl = `${this.baseUrl}/refresh-token`;
-          const cookieHeader = await this.cookieStore?.getCookieHeader?.(refreshUrl);
-          const refreshSecret = this.extractRefreshSecret(cookieHeader);
+          const refreshSecret = this.refreshSecret;
           const refreshFailureLog: {
             cause: string;
             reason?: string;
@@ -431,6 +453,7 @@ export default class Revlm {
           if (refreshSecret) refreshFailureLog.refreshSecret = refreshSecret;
           this.logRefreshFailureClient(refreshFailureLog);
           if ((refreshRes as any).reason === 'no_refresh_secret') {
+            await this.clearRefreshSecret();
             const missingError = new Error('Refresh cookie missing. Provide a cookie-aware fetch implementation for Node/RN.');
             (missingError as any).revlmReason = 'no_refresh_secret';
             (missingError as any).revlmCode = (refreshRes as any).code;
@@ -443,12 +466,17 @@ export default class Revlm {
           const now = Math.floor(Date.now() / 1000);
           const oldExp = beforePayload?.exp;
           const newExp = afterPayload?.exp;
+          const oldTtlSec = typeof oldExp === 'number' ? oldExp - now : undefined;
+          const newTtlSec = typeof newExp === 'number' ? newExp - now : undefined;
+          const oldExpDisplay = this.formatUnixSeconds(oldExp);
+          const newExpDisplay = this.formatUnixSeconds(newExp);
+          const ttlDisplay = this.formatTtlDetailed(newTtlSec);
           this.logDebug('### refresh success', {
             path,
-            oldExp,
-            newExp,
-            oldTtlSec: typeof oldExp === 'number' ? oldExp - now : undefined,
-            newTtlSec: typeof newExp === 'number' ? newExp - now : undefined,
+            oldExp: oldExpDisplay ? `${oldExp} (${oldExpDisplay})` : oldExp,
+            newExp: newExpDisplay ? `${newExp} (${newExpDisplay})` : newExp,
+            oldTtlSec,
+            newTtlSec: typeof newTtlSec === 'number' && ttlDisplay ? `${newTtlSec} (${ttlDisplay})` : newTtlSec,
           });
           return this.requestWithRetry(path, method, body, { allowAuthRetry: false, retrying: true });
         }
@@ -479,7 +507,11 @@ export default class Revlm {
     }
     await this.ensureCookieSupport();
     if (!authId) throw new Error('authId is required');
-    const provisionalClient = new AuthClient({ secretMaster: this.provisionalAuthSecretMaster, authDomain: this.provisionalAuthDomain });
+    const provisionalClient = new AuthClient({
+      secretMaster: this.provisionalAuthSecretMaster,
+      authDomain: this.provisionalAuthDomain,
+      randomBytes: this.randomBytesImpl,
+    });
     const provisionalPassword = await provisionalClient.producePassword(String(Date.now() * 1000));
     const res = await this.request('/provisional-login', 'POST', { authId, password: provisionalPassword });
     if (this.autoSetToken && res && res.ok && res.token) {
@@ -487,6 +519,25 @@ export default class Revlm {
     }
     return res as ProvisionalLoginResponse;
   }
+
+  private formatUnixSeconds(epochSeconds?: number): string | undefined {
+    if (typeof epochSeconds !== 'number' || !Number.isFinite(epochSeconds)) return undefined;
+    const date = new Date(epochSeconds * 1000);
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  }
+
+  private formatTtlDetailed(seconds?: number): string | undefined {
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return undefined;
+    const totalSeconds = Math.max(0, Math.floor(seconds));
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${days} ${pad(hours)}:${pad(minutes)}:${pad(secs)}`;
+  }
+
 
   async registerUser(user: UserInput, password: string): Promise<RegisterUserResponse> {
     if (!user) throw new Error('user is required');
@@ -512,16 +563,22 @@ export default class Revlm {
   private async ensureCookieSupport(): Promise<void> {
     if (this.cookieCheckPromise) return this.cookieCheckPromise;
     this.cookieCheckPromise = (async () => {
-      const first = await this.requestWithRetry('/cookie-check', 'POST', undefined, { allowAuthRetry: false, retrying: false });
-      this.logDebug('### cookie check', { step: 'first', ok: first.ok, reason: (first as any).reason, status: first.status });
-      if (first.ok) return;
-      if ((first as any).reason !== 'cookie_missing') {
-        throw new Error(`Cookie check failed: ${(first as any).reason || first.error || 'unknown_error'}`);
-      }
-      const second = await this.requestWithRetry('/cookie-check', 'POST', undefined, { allowAuthRetry: false, retrying: false });
-      this.logDebug('### cookie check', { step: 'second', ok: second.ok, reason: (second as any).reason, status: second.status });
-      if (!second.ok) {
-        throw new Error('Cookie support missing. Provide a cookie-aware fetch implementation for Node/RN.');
+      try {
+        const first = await this.requestWithRetry('/cookie-check', 'POST', undefined, { allowAuthRetry: false, retrying: false });
+        this.logDebug('### cookie check', { step: 'first', ok: first.ok, reason: (first as any).reason, status: first.status });
+        if (first.ok) {
+          this.refreshMode = 'cookie';
+          return;
+        }
+        if ((first as any).reason !== 'cookie_missing') {
+          this.refreshMode = 'header';
+          return;
+        }
+        const second = await this.requestWithRetry('/cookie-check', 'POST', undefined, { allowAuthRetry: false, retrying: false });
+        this.logDebug('### cookie check', { step: 'second', ok: second.ok, reason: (second as any).reason, status: second.status });
+        this.refreshMode = second.ok ? 'cookie' : 'header';
+      } catch {
+        this.refreshMode = 'header';
       }
     })();
     return this.cookieCheckPromise;

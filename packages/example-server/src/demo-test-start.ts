@@ -7,6 +7,7 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { MongoClient, type Collection } from "mongodb";
 import { parse as parseCsv } from "csv-parse/sync";
 import { createRequire } from "module";
+import { randomBytes as nodeRandomBytes } from "crypto";
 import { AuthClient } from "@kedaruma/revlm-shared/auth-token";
 import { startHttpsProxy } from "./https-proxy.js";
 
@@ -484,6 +485,7 @@ async function createDemoUserIfPossible(serverUrl: string, env: EnvConfig, cli: 
     const provisionalClient = new AuthClient({
       secretMaster: provisionalAuthSecretMaster,
       authDomain: provisionalAuthDomain,
+      randomBytes: (length) => new Uint8Array(nodeRandomBytes(length)),
     });
     const provisionalPassword = await provisionalClient.producePassword(provisionalAuthId);
 

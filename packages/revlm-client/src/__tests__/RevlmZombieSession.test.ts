@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { randomBytes as nodeRandomBytes } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { jest } from '@jest/globals';
@@ -22,6 +23,9 @@ dotenv.config({ path: path.join(__dirname, 'test.env') });
 jest.setTimeout(20000);
 
 const SHORT_TTL_SEC = 2;
+// Use Node crypto for AuthClient.
+// AuthClient 用に Node crypto を使う。
+const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
 function createFetchWithCookies(baseFetch: typeof fetch) {
   const cookieJar = { value: '' };
@@ -81,6 +85,7 @@ describe('Revlm zombie session pruning', () => {
       const client = new Revlm(testEnv.serverUrl, {
         fetchImpl: createFetchWithCookies(fetch),
         sessionId,
+        randomBytes,
       });
       const loginRes = await client.login(authId, password);
       expect(loginRes.ok).toBe(true);

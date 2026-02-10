@@ -1,3 +1,4 @@
+import { randomBytes as nodeRandomBytes } from 'crypto';
 import { Revlm } from '@kedaruma/revlm-client/revlm-compat';
 import type * as RevlmCompat from '@kedaruma/revlm-client/revlm-compat';
 
@@ -70,21 +71,6 @@ function createRefreshSecretStore() {
   };
 }
 
-// Cookie store that only supports /cookie-check endpoints.
-// /cookie-check のみ通すためのダミーCookieストア。
-function createCookieCheckStore(): RevlmCompat.CookieStore {
-  const cookieHeader = 'revlm_cookie_check=1';
-  return {
-    getCookieHeader: (url) => {
-      if (!url.includes('/cookie-check')) return undefined;
-      return cookieHeader;
-    },
-    // Intentionally ignore server cookies in the CLI.
-    // CLIではサーバーからのCookieを保持しない。
-    setCookie: () => {},
-  };
-}
-
 // Fetch wrapper to capture refresh secret and send it via header.
 // refresh シークレットを保持してヘッダ送信する fetch ラッパー。
 function createFetchImpl(refreshStore: { get: () => string | undefined; setFromSetCookie: (value?: string | null) => void }): typeof fetch {
@@ -128,7 +114,9 @@ export async function runExampleFlow(options: FlowOptions) {
   // - CLI ではデモの再現性を優先して固定 sessionId を使う。
   const refreshStore = createRefreshSecretStore();
   const fetchImpl = createFetchImpl(refreshStore);
-  const cookieStore = createCookieCheckStore();
+  // Use Node crypto for AuthClient.
+  // AuthClient 用に Node crypto を使う。
+  const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
   const revlm = new Revlm(options.baseUrl, {
     provisionalEnabled: true,
     provisionalAuthSecretMaster: options.provisionalAuthSecretMaster,
@@ -137,7 +125,7 @@ export async function runExampleFlow(options: FlowOptions) {
     autoRefreshOn401: !!options.autoRefreshOn401,
     sessionId: options.sessionId,
     fetchImpl,
-    cookieStore,
+    randomBytes,
     logLevel: 'info',
   });
 

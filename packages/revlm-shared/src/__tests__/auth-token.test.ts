@@ -8,6 +8,7 @@ AuthToken テスト概要:
 - demo() が例外を投げずに動作することを確認。
 */
 
+import { randomBytes as nodeRandomBytes } from 'crypto';
 import { AuthClient, AuthServer } from '@kedaruma/revlm-shared/auth-token';
 
 // Tests for AuthClient/AuthServer password token behavior
@@ -16,6 +17,9 @@ import { AuthClient, AuthServer } from '@kedaruma/revlm-shared/auth-token';
 // Tests grouped for password token lifecycle and demo
 // パスワードトークンのライフサイクルと demo に関するテスト群
 describe('AuthToken', () => {
+  // Use Node crypto for tests.
+  // テストでは Node crypto を使用する。
+  const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
   // Test constants used across cases
   // テスト全体で使う定数
   const secretMaster = 'test_secret_123!@#日本語';
@@ -26,7 +30,7 @@ describe('AuthToken', () => {
   // Initialize client/server instances before tests
   // テスト前に AuthClient と AuthServer のインスタンスを初期化する
   beforeAll(() => {
-    client = new AuthClient({ secretMaster, authDomain });
+    client = new AuthClient({ secretMaster, authDomain, randomBytes });
     server = new AuthServer({ secretMaster, authDomain });
   });
 

@@ -98,45 +98,21 @@ export class AuthClient {
   private hkdfInfo: Uint8Array;
   private randomBytesImpl: (length: number) => Uint8Array;
 
-  private static resolveRandomBytes(): (length: number) => Uint8Array {
-    // Prefer global crypto.getRandomValues (Web/RN).
-    // Web/RN では globalThis.crypto.getRandomValues を優先。
-    const globalCrypto = (globalThis as any)?.crypto;
-    if (globalCrypto && typeof globalCrypto.getRandomValues === 'function') {
-      return (length: number) => {
-        const out = new Uint8Array(length);
-        globalCrypto.getRandomValues(out);
-        return out;
-      };
-    }
-
-    // Node/Express fallback.
-    // Node/Express では crypto.randomBytes を使用。
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const nodeCrypto = require('crypto') as { randomBytes?: (size: number) => Uint8Array | Buffer };
-      if (nodeCrypto?.randomBytes) {
-        return (length: number) => new Uint8Array(nodeCrypto.randomBytes!(length));
-      }
-    } catch {
-      // ignore: throw below if nothing available
-    }
-
-    throw new Error('No secure random source available. Provide randomBytes explicitly.');
-  }
-
   constructor(opts: {
     secretMaster: string;
     authDomain: string;
     hkdfInfo?: Uint8Array;
-    randomBytes?: (length: number) => Uint8Array;
+    randomBytes: (length: number) => Uint8Array;
   }) {
     this.secretMaster = opts.secretMaster;
     this.authDomain = opts.authDomain;
     this.hkdfInfo = opts.hkdfInfo ?? textEncoder.encode(`auth-v1|${this.authDomain}`);
     // Allow platform-specific random source injection.
     // プラットフォーム固有の乱数実装を外部から差し込めるようにする。
-    this.randomBytesImpl = opts.randomBytes ?? AuthClient.resolveRandomBytes();
+    if (!opts.randomBytes) {
+      throw new Error('randomBytes is required');
+    }
+    this.randomBytesImpl = opts.randomBytes;
   }
 
   async producePassword(deviceId?: string): Promise<string> {
@@ -220,7 +196,7 @@ export class AuthServer {
 export async function demo() {
   const msStr = 'muster-secret';
   const authDomain = "com.example.app";
-  const client = new AuthClient({ secretMaster: msStr, authDomain });
+  const client = new AuthClient({ secretMaster: msStr, authDomain, randomBytes });
   const server = new AuthServer({ secretMaster: msStr, authDomain });
   const password = await client.producePassword("device-xyz");
   const res = await server.validatePassword(password);

@@ -19,6 +19,7 @@ Test overview:
 */
 
 import dotenv from "dotenv";
+import { randomBytes as nodeRandomBytes } from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import { jest } from "@jest/globals";
@@ -37,6 +38,9 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, "test.env") });
 
 let testEnv: SetupTestEnvironmentResult;
+// Use Node crypto for AuthClient.
+// AuthClient 用に Node crypto を使う。
+const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
 // Integration tests may start a local server and do a few round-trips.
 // 統合テストはローカルサーバ起動＋複数往復があるため少し長めに。
@@ -105,6 +109,7 @@ describe("revlm-compat entrypoint", () => {
       sessionId: SESSION_ID,
       autoSetToken: true,
       autoRefreshOn401: false,
+      randomBytes,
       logLevel: "info",
     });
 

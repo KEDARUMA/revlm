@@ -1,3 +1,4 @@
+import { randomBytes as nodeRandomBytes } from "crypto";
 import { Revlm } from "@kedaruma/revlm-client/revlm-compat";
 import type * as RevlmCompat from "@kedaruma/revlm-client/revlm-compat";
 import dotenv from "dotenv";
@@ -90,29 +91,12 @@ async function run() {
     );
   }
 
-  // 1) Create Revlm client with a minimal cookie store.
-  // 1) Revlmクライアントを作成（最小CookieStore付き）。
+  // 1) Create Revlm client.
+  // 1) Revlmクライアントを作成。
   step("1) create client");
-  const cookieJar = new Map<string, string>();
-  const cookieStore: RevlmCompat.CookieStore = {
-    getCookieHeader: () => {
-      if (!cookieJar.size) return undefined;
-      return Array.from(cookieJar.entries())
-        .map(([key, value]) => `${key}=${value}`)
-        .join("; ");
-    },
-    setCookie: (_url, setCookieHeader) => {
-      if (!setCookieHeader) return;
-      const [cookiePair] = setCookieHeader.split(";");
-      if (!cookiePair) return;
-      const sep = cookiePair.indexOf("=");
-      if (sep === -1) return;
-      const name = cookiePair.slice(0, sep).trim();
-      const value = cookiePair.slice(sep + 1).trim();
-      if (!name) return;
-      cookieJar.set(name, value);
-    },
-  };
+  // Use Node crypto for AuthClient.
+  // AuthClient 用に Node crypto を使う。
+  const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
   const revlm = new Revlm(baseUrl, {
     provisionalEnabled: true,
@@ -121,7 +105,7 @@ async function run() {
     sessionId,
     autoSetToken: true,
     autoRefreshOn401: true,
-    cookieStore,
+    randomBytes,
     logLevel: "info",
   });
   log("client ready", { baseUrl, usersDbName, sessionId });

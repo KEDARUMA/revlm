@@ -17,17 +17,6 @@ export function getRevlmClient(): Revlm {
     }
     return value;
   };
-  const cookieStore = {
-    // Dummy cookie store for /cookie-check only.
-    // /cookie-check 用のダミーCookieストア。
-    getCookieHeader: async (url: string) => {
-      if (!url.includes('/cookie-check')) return undefined;
-      return 'revlm_cookie_check=1';
-    },
-    // RNではCookie保存を行わない。
-    setCookie: async () => {},
-  };
-
   // Fetch wrapper for request/response logging.
   // リクエスト/レスポンスのログ用ラッパー。
   const fetchImpl: typeof fetch = async (input, init) => {
@@ -78,6 +67,13 @@ export function getRevlmClient(): Revlm {
     }
     return res;
   };
+  // Use RN crypto for AuthClient.
+  // AuthClient 用に RN crypto を使う。
+  const randomBytes = (length: number) => {
+    const out = new Uint8Array(length);
+    (global.crypto as any).getRandomValues(out);
+    return out;
+  };
 
   cachedClient = new Revlm(env.baseUrl, {
     provisionalEnabled: env.provisionalLoginEnabled,
@@ -87,7 +83,7 @@ export function getRevlmClient(): Revlm {
     autoSetToken: true,
     autoRefreshOn401: env.autoRefreshOn401,
     fetchImpl,
-    cookieStore,
+    randomBytes,
     logLevel: env.logLevel as any,
   });
 

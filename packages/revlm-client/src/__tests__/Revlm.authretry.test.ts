@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { randomBytes as nodeRandomBytes } from 'crypto';
 import Revlm from '../Revlm';
 
 type MockResponseInit = { status: number; body: any };
@@ -7,11 +8,21 @@ function makeMockResponse({ status, body }: MockResponseInit) {
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: {
+      // Minimal Headers stub for cookie parsing.
+      // cookie パース用の最小 Headers スタブ。
+      get() {
+        return null;
+      },
+    },
     async text() {
       return JSON.stringify(body);
     },
   } as any;
 }
+// Use Node crypto for AuthClient.
+// AuthClient 用に Node crypto を使う。
+const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
 describe('Revlm autoRefreshOn401', () => {
   // 401でリフレッシュした後に同じリクエストを再送する
@@ -28,7 +39,11 @@ describe('Revlm autoRefreshOn401', () => {
       // retry original -> 200 success
       .mockResolvedValueOnce(makeMockResponse({ status: 200, body: { ok: true, result: { data: 1 } } }));
 
-    const client = new Revlm('https://api.example.com', { fetchImpl: fetchMock as any, autoRefreshOn401: true });
+    const client = new Revlm('https://api.example.com', {
+      fetchImpl: fetchMock as any,
+      autoRefreshOn401: true,
+      randomBytes,
+    });
     client.setToken('expired-token');
 
     const res = await client.revlmGate({ db: 'db', collection: 'col', method: 'find', filter: {} });
@@ -48,7 +63,11 @@ describe('Revlm autoRefreshOn401', () => {
       .mockResolvedValueOnce(makeMockResponse({ status: 428, body: { ok: false, reason: 'cookie_missing' } }))
       .mockResolvedValueOnce(makeMockResponse({ status: 200, body: { ok: true } }))
       .mockResolvedValueOnce(makeMockResponse({ status: 401, body: { ok: false, reason: 'token_expired' } }));
-    const client = new Revlm('https://api.example.com', { fetchImpl: fetchMock as any, autoRefreshOn401: false });
+    const client = new Revlm('https://api.example.com', {
+      fetchImpl: fetchMock as any,
+      autoRefreshOn401: false,
+      randomBytes,
+    });
     client.setToken('expired-token');
 
     const res = await client.revlmGate({ db: 'db', collection: 'col', method: 'find', filter: {} });
