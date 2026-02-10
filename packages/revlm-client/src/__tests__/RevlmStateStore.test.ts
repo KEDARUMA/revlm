@@ -1,4 +1,3 @@
-import { randomBytes as nodeRandomBytes } from 'crypto';
 import { EJSON } from 'bson';
 import { jest } from '@jest/globals';
 import Revlm from '../Revlm';
@@ -13,7 +12,6 @@ type MockStateStore = {
 const STORE_KEY_REFRESH = 'refreshSecret';
 // Use Node crypto for AuthClient.
 // AuthClient 用に Node crypto を使う。
-const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
 function createStateStore(seed?: Record<string, string>): MockStateStore {
   // Simple in-memory stateStore for tests.
@@ -66,7 +64,6 @@ describe('Revlm stateStore for refreshSecret', () => {
     });
     const client = new Revlm('https://example.test', {
       fetchImpl,
-      randomBytes,
       stateStore: store,
     });
 
@@ -87,7 +84,6 @@ describe('Revlm stateStore for refreshSecret', () => {
     });
     const client = new Revlm('https://example.test', {
       fetchImpl,
-      randomBytes,
       stateStore: store,
       sessionId: 'example-session',
     });
@@ -109,7 +105,6 @@ describe('Revlm stateStore for refreshSecret', () => {
     });
     const client = new Revlm('https://example.test', {
       fetchImpl,
-      randomBytes,
       stateStore: store,
       autoRefreshOn401: true,
       sessionId: 'example-session',

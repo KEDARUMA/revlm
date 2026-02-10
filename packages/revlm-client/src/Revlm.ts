@@ -80,7 +80,6 @@ export type RevlmOptions = {
   provisionalEnabled?: boolean;
   provisionalAuthSecretMaster?: string;
   provisionalAuthDomain?: string;
-  randomBytes: (length: number) => Uint8Array;
   // automatically set token returned from login/provisionalLogin into the client
   autoSetToken?: boolean;
   // automatically refresh on 401 once and retry the original request
@@ -121,10 +120,9 @@ export default class Revlm {
   private refreshPromise: Promise<RevlmResponse> | undefined;
   private sessionId: string | undefined;
   private sessionIdProvider: (() => string | Promise<string>) | undefined;
-  private randomBytesImpl: (length: number) => Uint8Array;
   private refreshSecret: string | undefined;
   private refreshMode: 'unknown' | 'cookie' | 'header' = 'unknown';
-  private stateStore?: RevlmStateStore;
+  private stateStore: RevlmStateStore | undefined;
 
   constructor(baseUrl: string, opts: RevlmOptions = {}) {
     if (!baseUrl) throw new Error('baseUrl is required');
@@ -139,7 +137,6 @@ export default class Revlm {
     this.logLevel = normalizeLogLevel(opts.logLevel);
     this.sessionId = opts.sessionId;
     this.sessionIdProvider = opts.sessionIdProvider;
-    this.randomBytesImpl = opts.randomBytes;
     this.stateStore = opts.stateStore;
 
     if (!this.fetchImpl) {
@@ -510,7 +507,6 @@ export default class Revlm {
     const provisionalClient = new AuthClient({
       secretMaster: this.provisionalAuthSecretMaster,
       authDomain: this.provisionalAuthDomain,
-      randomBytes: this.randomBytesImpl,
     });
     const provisionalPassword = await provisionalClient.producePassword(String(Date.now() * 1000));
     const res = await this.request('/provisional-login', 'POST', { authId, password: provisionalPassword });

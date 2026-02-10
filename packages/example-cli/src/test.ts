@@ -1,6 +1,5 @@
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
-import { randomBytes as nodeRandomBytes } from 'crypto';
 import { Revlm } from '@kedaruma/revlm-client/revlm-compat';
 import { runExampleFlow } from './run.js';
 
@@ -176,7 +175,6 @@ function createExampleClient(options: ExampleClientOptions) {
   const fetchImpl = createFetchImpl(refreshStore);
   // Use Node crypto for AuthClient.
   // AuthClient 用に Node crypto を使う。
-  const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
   return new Revlm(options.baseUrl, {
     provisionalEnabled: true,
     provisionalAuthSecretMaster: options.provisionalAuthSecretMaster,
@@ -185,7 +183,6 @@ function createExampleClient(options: ExampleClientOptions) {
     autoRefreshOn401: options.autoRefreshOn401,
     sessionId: options.sessionId,
     fetchImpl,
-    randomBytes,
     logLevel: 'info',
   });
 }

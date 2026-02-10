@@ -3,7 +3,6 @@ Integration test: auto refresh on 401 with real server + in-memory MongoDB.
 This uses a simple Cookie jar for Node fetch to persist revlm_refresh.
 */
 import dotenv from 'dotenv';
-import { randomBytes as nodeRandomBytes } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { jest } from '@jest/globals';
@@ -29,7 +28,6 @@ const TEST_PASSWORD = 'auth-refresh-pass';
 const SESSION_ID = 'test-session';
 // Use Node crypto for AuthClient.
 // AuthClient 用に Node crypto を使う。
-const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
 function createFetchWithCookies(baseFetch: typeof fetch) {
   const cookieJar = { value: '' };
@@ -146,7 +144,6 @@ describe('Revlm autoRefreshOn401 (integration)', () => {
       fetchImpl: createFetchWithCookies(fetch),
       autoRefreshOn401: true,
       sessionId: SESSION_ID,
-      randomBytes,
     });
 
     const loginRes = await client.login(TEST_AUTH_ID, TEST_PASSWORD);
@@ -191,7 +188,6 @@ describe('Revlm autoRefreshOn401 (integration)', () => {
       fetchImpl: createFetchWithRefreshHeader(fetch),
       autoRefreshOn401: true,
       sessionId: SESSION_ID,
-      randomBytes,
     });
 
     const loginRes = await client.login(TEST_AUTH_ID, TEST_PASSWORD);

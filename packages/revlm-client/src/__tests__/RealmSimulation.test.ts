@@ -10,7 +10,6 @@ verifyToken で有効を確認、仮アカウントのトークン refreshToken 
 */
 
 import dotenv from 'dotenv';
-import { randomBytes as nodeRandomBytes } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { jest } from '@jest/globals';
@@ -30,7 +29,6 @@ const TEST_USER_ID = 'test'
 const TEST_USER_PASSWORD = 'test'
 // Use Node crypto for AuthClient.
 // AuthClient 用に Node crypto を使う。
-const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
 dotenv.config({ path: path.join(__dirname, 'test.env') });
 
@@ -89,7 +87,6 @@ describe('Revlm.provisionalLogin (integration)', () => {
         provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
         fetchImpl: createFetchWithCookies(fetch),
         sessionId: SESSION_ID,
-        randomBytes,
       }
     );
     const res = await revlm.provisionalLogin(process.env.PROVISIONAL_AUTH_ID as string);

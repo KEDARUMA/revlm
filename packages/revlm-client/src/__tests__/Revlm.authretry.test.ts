@@ -1,5 +1,4 @@
 import { jest } from '@jest/globals';
-import { randomBytes as nodeRandomBytes } from 'crypto';
 import Revlm from '../Revlm';
 
 type MockResponseInit = { status: number; body: any };
@@ -22,7 +21,6 @@ function makeMockResponse({ status, body }: MockResponseInit) {
 }
 // Use Node crypto for AuthClient.
 // AuthClient 用に Node crypto を使う。
-const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
 describe('Revlm autoRefreshOn401', () => {
   // 401でリフレッシュした後に同じリクエストを再送する
@@ -42,7 +40,6 @@ describe('Revlm autoRefreshOn401', () => {
     const client = new Revlm('https://api.example.com', {
       fetchImpl: fetchMock as any,
       autoRefreshOn401: true,
-      randomBytes,
     });
     client.setToken('expired-token');
 
@@ -66,7 +63,6 @@ describe('Revlm autoRefreshOn401', () => {
     const client = new Revlm('https://api.example.com', {
       fetchImpl: fetchMock as any,
       autoRefreshOn401: false,
-      randomBytes,
     });
     client.setToken('expired-token');
 

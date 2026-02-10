@@ -14,14 +14,6 @@ export function getRevlmClient(): Revlm {
       ...init,
       credentials: "include",
     });
-  // Use Web crypto for AuthClient.
-  // AuthClient 用に Web crypto を使う。
-  const randomBytes = (length: number) => {
-    const out = new Uint8Array(length);
-    (globalThis.crypto as Crypto).getRandomValues(out);
-    return out;
-  };
-
   cachedClient = new Revlm(env.baseUrl, {
     provisionalEnabled: env.provisionalLoginEnabled,
     provisionalAuthSecretMaster: env.provisionalAuthSecretMaster,
@@ -30,7 +22,6 @@ export function getRevlmClient(): Revlm {
     autoSetToken: true,
     autoRefreshOn401: env.autoRefreshOn401,
     fetchImpl,
-    randomBytes,
     logLevel: env.logLevel,
   });
 

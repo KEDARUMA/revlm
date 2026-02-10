@@ -10,6 +10,7 @@ AuthToken テスト概要:
 
 import { randomBytes as nodeRandomBytes } from 'crypto';
 import { AuthClient, AuthServer } from '@kedaruma/revlm-shared/auth-token';
+import { initRandomBytes } from '../random-bytes';
 
 // Tests for AuthClient/AuthServer password token behavior
 // AuthClient/AuthServer のパスワードトークン動作に関するテスト
@@ -30,6 +31,7 @@ describe('AuthToken', () => {
   // Initialize client/server instances before tests
   // テスト前に AuthClient と AuthServer のインスタンスを初期化する
   beforeAll(() => {
+    initRandomBytes(randomBytes);
     client = new AuthClient({ secretMaster, authDomain, randomBytes });
     server = new AuthServer({ secretMaster, authDomain });
   });
@@ -67,6 +69,14 @@ describe('AuthToken', () => {
     if (!second.ok) {
       expect(second.reason).toBe('replay');
     }
+  });
+
+  // randomBytes 未指定でも、shared 側の初期化実装で動作する
+  it('should use shared random implementation when randomBytes is omitted', async () => {
+    const localClient = new AuthClient({ secretMaster, authDomain });
+    const password = await localClient.producePassword('test-device');
+    const result = await server.validatePassword(password);
+    expect(result.ok).toBe(true);
   });
 });
 

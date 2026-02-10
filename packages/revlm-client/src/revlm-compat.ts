@@ -35,7 +35,7 @@ import type {
 // - `import { Revlm } from '@kedaruma/revlm-client'`（推奨）
 // - `import { Revlm } from '@kedaruma/revlm-client/revlm-compat'`（互換面）
 export { Revlm, App, Credentials, MongoDBService, RevlmUser } from "./index";
-export type { CookieStore, RevlmOptions, RevlmResponse } from "./Revlm";
+export type { RevlmOptions, RevlmResponse, RevlmStateStore } from "./Revlm";
 
 // BSON helpers are often used by existing Realm apps; we keep them available here.
 // BSON 周りは Realm アプリ既存コードで使われがちなので、互換面でも提供します。

@@ -9,7 +9,6 @@ revlm-server を起動、仮ログイン→ユーザ登録→全コレクショ�
 */
 
 import dotenv from 'dotenv';
-import { randomBytes as nodeRandomBytes } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { jest } from '@jest/globals';
@@ -40,7 +39,6 @@ const SHORT_TTL_SEC = 2;
 const MULTI_SESSION_IDS = ['client-multi-1', 'client-multi-2', 'client-multi-3', 'client-multi-4'];
 // Use Node crypto for AuthClient.
 // AuthClient 用に Node crypto を使う。
-const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
 function createFetchWithCookies(baseFetch: typeof fetch) {
   const cookieJar = { value: '' };
@@ -67,7 +65,6 @@ function createClientForSession(serverUrl: string, sessionId: string, opts: Part
     provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
     fetchImpl: createFetchWithCookies(fetch),
     sessionId,
-    randomBytes,
     ...opts,
   });
 }
@@ -100,7 +97,6 @@ describe('RevlmCollection (integration)', () => {
       provisionalAuthDomain: process.env.PROVISIONAL_AUTH_DOMAIN as string,
       fetchImpl: createFetchWithCookies(fetch),
       sessionId: SESSION_ID,
-      randomBytes,
     });
     // Perform provisional login to obtain token for test setup
     // 仮ログインを実行してテストセットアップ用のトークンを取得

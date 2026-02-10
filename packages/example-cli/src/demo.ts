@@ -1,4 +1,3 @@
-import { randomBytes as nodeRandomBytes } from "crypto";
 import { Revlm } from "@kedaruma/revlm-client/revlm-compat";
 import type * as RevlmCompat from "@kedaruma/revlm-client/revlm-compat";
 import dotenv from "dotenv";
@@ -96,7 +95,6 @@ async function run() {
   step("1) create client");
   // Use Node crypto for AuthClient.
   // AuthClient 用に Node crypto を使う。
-  const randomBytes = (length: number) => new Uint8Array(nodeRandomBytes(length));
 
   const revlm = new Revlm(baseUrl, {
     provisionalEnabled: true,
@@ -105,7 +103,6 @@ async function run() {
     sessionId,
     autoSetToken: true,
     autoRefreshOn401: true,
-    randomBytes,
     logLevel: "info",
   });
   log("client ready", { baseUrl, usersDbName, sessionId });

@@ -18,6 +18,11 @@
       "react-native": "./dist/auth-token.js",
       "import": "./dist/auth-token.js"
     },
+    "./random-bytes": {
+      "types": "./dist/random-bytes.d.ts",
+      "react-native": "./dist/random-bytes.js",
+      "import": "./dist/random-bytes.js"
+    },
     "./models/user-types": {
       "types": "./dist/models/user-types.d.ts",
       "react-native": "./dist/models/user-types.js",
@@ -44,6 +49,9 @@
       ],
       "auth-token": [
         "dist/auth-token.d.ts"
+      ],
+      "random-bytes": [
+        "dist/random-bytes.d.ts"
       ],
       "utils/asserts": [
         "dist/utils/asserts.d.ts"

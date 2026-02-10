@@ -67,14 +67,6 @@ export function getRevlmClient(): Revlm {
     }
     return res;
   };
-  // Use RN crypto for AuthClient.
-  // AuthClient 用に RN crypto を使う。
-  const randomBytes = (length: number) => {
-    const out = new Uint8Array(length);
-    (global.crypto as any).getRandomValues(out);
-    return out;
-  };
-
   cachedClient = new Revlm(env.baseUrl, {
     provisionalEnabled: env.provisionalLoginEnabled,
     provisionalAuthSecretMaster: env.provisionalAuthSecretMaster,
@@ -83,7 +75,6 @@ export function getRevlmClient(): Revlm {
     autoSetToken: true,
     autoRefreshOn401: env.autoRefreshOn401,
     fetchImpl,
-    randomBytes,
     logLevel: env.logLevel as any,
   });
 

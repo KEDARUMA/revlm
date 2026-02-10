@@ -1,5 +1,5 @@
 export { default as Revlm } from './Revlm';
-export type { RevlmOptions, RevlmResponse, CookieStore } from './Revlm';
+export type { RevlmOptions, RevlmResponse, RevlmStateStore } from './Revlm';
 export { App, Credentials, MongoDBService, RevlmUser } from './Revlm';
 export * from './Revlm.types';
 export { default as MdbCollection } from './MdbCollection';

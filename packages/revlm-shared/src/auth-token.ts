@@ -9,7 +9,7 @@
 import { gcm } from '@noble/ciphers/aes';
 import { hkdf } from '@noble/hashes/hkdf';
 import { sha256 } from '@noble/hashes/sha256';
-import { randomBytes } from '@noble/hashes/utils';
+import { getRandomBytes, type RandomBytesFn } from './random-bytes.js';
 
 // ========= Shared Utilities =========
 const textEncoder = new TextEncoder();
@@ -102,17 +102,14 @@ export class AuthClient {
     secretMaster: string;
     authDomain: string;
     hkdfInfo?: Uint8Array;
-    randomBytes: (length: number) => Uint8Array;
+    randomBytes?: RandomBytesFn;
   }) {
     this.secretMaster = opts.secretMaster;
     this.authDomain = opts.authDomain;
     this.hkdfInfo = opts.hkdfInfo ?? textEncoder.encode(`auth-v1|${this.authDomain}`);
-    // Allow platform-specific random source injection.
-    // プラットフォーム固有の乱数実装を外部から差し込めるようにする。
-    if (!opts.randomBytes) {
-      throw new Error('randomBytes is required');
-    }
-    this.randomBytesImpl = opts.randomBytes;
+    // Use injected random first; fallback to shared initializer implementation.
+    // 注入された乱数実装を優先し、未指定時は shared 初期化の実装を使う。
+    this.randomBytesImpl = opts.randomBytes ?? getRandomBytes();
   }
 
   async producePassword(deviceId?: string): Promise<string> {
@@ -196,7 +193,7 @@ export class AuthServer {
 export async function demo() {
   const msStr = 'muster-secret';
   const authDomain = "com.example.app";
-  const client = new AuthClient({ secretMaster: msStr, authDomain, randomBytes });
+  const client = new AuthClient({ secretMaster: msStr, authDomain });
   const server = new AuthServer({ secretMaster: msStr, authDomain });
   const password = await client.producePassword("device-xyz");
   const res = await server.validatePassword(password);
