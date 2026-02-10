@@ -97,8 +97,8 @@ importers:
         specifier: latest
         version: 1.0.62
       '@kedaruma/revlm-shared':
-        specifier: ^1.0.10
-        version: 1.0.10
+        specifier: latest
+        version: 1.0.12
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
@@ -1568,9 +1568,6 @@ packages:
 
   '@kedaruma/revlm-server@1.0.61':
     resolution: {integrity: sha512-v9whF7RZQsDw+Dvi34qqfQTweuY3lGCACREE8VRtEVNgwEKrEhJARGIHxhMb6YAXdTiFsfctWr9q5hzBSjMX0g==}
-
-  '@kedaruma/revlm-shared@1.0.10':
-    resolution: {integrity: sha512-jKCrwQgZq8xxanc48SswMNMissyth5tlL+fuFWIzPTSySz/l76tOmCfUgk3qhN/p+/iWnpI6fSO2ysp/7kD41w==}
 
   '@kedaruma/revlm-shared@1.0.12':
     resolution: {integrity: sha512-6gZ+uPa/7iGi4QRmper2FjyW0rQwVluUSzOa38Aqkuw5igpWQ0Vdh+q1gXK3tMWsAaRNzyLIuzv7o/PIDCdrPQ==}
@@ -7998,12 +7995,6 @@ snapshots:
       - snappy
       - socks
       - supports-color
-
-  '@kedaruma/revlm-shared@1.0.10':
-    dependencies:
-      '@noble/ciphers': 1.3.0
-      '@noble/hashes': 1.8.0
-      bson: 6.10.4
 
   '@kedaruma/revlm-shared@1.0.12':
     dependencies:
