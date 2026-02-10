@@ -228,6 +228,7 @@ function normalizeSessionId(value?: string): string | undefined {
 }
 
 let refreshSessionPruneTimer: NodeJS.Timeout | undefined;
+let mongoFatalExitScheduled = false;
 
 function getRefreshSessionPruneIntervalMs(): number {
   return Math.max(
@@ -246,6 +247,7 @@ export async function pruneExpiredRefreshSessions(): Promise<void> {
     }
   } catch (err: any) {
     console.log('pruneExpiredRefreshSessions error - name:', err && err.name, 'message:', err && err.message);
+    scheduleMongoFatalExit('pruneExpiredRefreshSessions', err);
   }
 }
 
@@ -254,6 +256,7 @@ function scheduleRefreshSessionPrune() {
   refreshSessionPruneTimer = setInterval(() => {
     pruneExpiredRefreshSessions().catch((err: any) => {
       console.log('scheduled refresh session prune error - name:', err && err.name, 'message:', err && err.message);
+      scheduleMongoFatalExit('scheduleRefreshSessionPrune', err);
     });
   }, getRefreshSessionPruneIntervalMs());
   if (typeof refreshSessionPruneTimer.unref === 'function') {
@@ -265,6 +268,31 @@ function clearRefreshSessionPrune() {
   if (!refreshSessionPruneTimer) return;
   clearInterval(refreshSessionPruneTimer);
   refreshSessionPruneTimer = undefined;
+}
+
+function isMongoConnectionFatalError(err: any): boolean {
+  const name = String(err?.name || '');
+  const message = String(err?.message || '');
+  if (name.includes('MongoServerSelectionError')) return true;
+  if (name.includes('MongoNetworkError')) return true;
+  if (name.includes('MongoTopologyClosedError')) return true;
+  if (message.includes('ECONNREFUSED')) return true;
+  if (message.includes('ENOTFOUND')) return true;
+  if (message.includes('timed out')) return true;
+  return false;
+}
+
+function scheduleMongoFatalExit(context: string, err: any): void {
+  if (!isMongoConnectionFatalError(err)) return;
+  console.error('[mongo][fatal]', context, '- name:', err?.name, 'message:', err?.message);
+  if (err?.stack) console.error(err.stack);
+  if (mongoFatalExitScheduled) return;
+  mongoFatalExitScheduled = true;
+  clearRefreshSessionPrune();
+  setTimeout(() => {
+    console.error('[mongo][fatal] shutting down process (exit=1)');
+    process.exit(1);
+  }, 0);
 }
 
 // Require sessionId in header for strict session scoping.
@@ -1000,6 +1028,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
       }
       return sendResponse(req, res, { ok: true, token, user });
     } catch (err: any) {
+      scheduleMongoFatalExit('POST /login', err);
       const statusCode = err.statusCode || 500;
       return sendResponse(req, res, { ok: false, error: err.message }, statusCode);
     }
@@ -1011,6 +1040,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
       const newUser = await registerUserRaw(user, password);
       return sendResponse(req, res, { ok: true, user: newUser });
     } catch (err: any) {
+      scheduleMongoFatalExit('POST /registerUser', err);
       return sendResponse(req, res, { ok: false, error: err.message }, 400);
     }
   });
@@ -1024,6 +1054,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
       const deletedCount = await deleteUserRaw(_id, authId);
       return sendResponse(req, res, { ok: true, deletedCount });
     } catch (err: any) {
+      scheduleMongoFatalExit('POST /deleteUser', err);
       return sendResponse(req, res, { ok: false, error: err.message }, 400);
     }
   });
@@ -1113,6 +1144,7 @@ export async function startServer(config: ServerConfig): Promise<http.Server> {
       }
       return sendResponse(req, res, { ok: true, result });
     } catch (err: any) {
+      scheduleMongoFatalExit('POST /revlm-gate', err);
       const statusCode = err.statusCode || 500;
       return sendResponse(req, res, { ok: false, error: err.message }, statusCode);
     }

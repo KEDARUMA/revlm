@@ -9,8 +9,21 @@ This package provides the React Native demo client for the Revlm server.
 - `pnpm --filter @kedaruma/example-rn start`: start Metro.
 - `pnpm --filter @kedaruma/example-rn ios`: run on iOS.
 - `pnpm --filter @kedaruma/example-rn android`: run on Android.
+- `pnpm --filter @kedaruma/example-rn android:https:prep`: normalize adb reverse + trigger Android cert install flow.
+- `pnpm --filter @kedaruma/example-rn android:https`: run prep, then run Android app.
 - `pnpm --filter @kedaruma/example-rn trust:ios-cert`: trust mkcert root CA in booted iOS simulators.
 - `pnpm --filter @kedaruma/example-rn trust:android-cert`: push and install cert on Android emulators.
+
+## Android startup change
+To improve HTTPS reproducibility, Android startup is now standardized on `android:https` instead of `android`.
+
+- Previous: `pnpm --filter @kedaruma/example-rn android`
+- Current: `pnpm --filter @kedaruma/example-rn android:https`
+
+`android:https` runs all required steps:
+- reset and re-apply `adb reverse` (8081/4123)
+- trigger Android certificate install flow (equivalent to `trust:android-cert`)
+- run `react-native run-android`
 
 ## Environment files
 
@@ -45,6 +58,42 @@ Android:
 
 ```
 pnpm --filter @kedaruma/example-rn android
+```
+
+### Reproducible Android HTTPS flow (recommended)
+Use this when onboarding or when Android login starts failing after environment drift.
+
+Terminal 1 (server):
+```
+pnpm --filter @kedaruma/example-server demo
+```
+
+Terminal 2 (Metro):
+```
+pnpm --filter @kedaruma/example-rn start -- --reset-cache
+```
+
+Terminal 3 (Android app + adb reverse + cert flow):
+```
+pnpm --filter @kedaruma/example-rn android:https
+```
+
+### Regular startup after first setup
+Use the following commands:
+
+Terminal 1 (server):
+```
+pnpm --filter @kedaruma/example-server demo
+```
+
+Terminal 2 (Metro):
+```
+pnpm --filter @kedaruma/example-rn start
+```
+
+Terminal 3 (Android):
+```
+pnpm --filter @kedaruma/example-rn android:https
 ```
 
 ## RN polyfills (important)

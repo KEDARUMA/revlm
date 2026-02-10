@@ -207,7 +207,7 @@ async function run() {
 
   // 17) provisional user create/delete.
   // 17) 仮ユーザの作成/削除。
-  const tempAuthId = "prov-demo-user";
+  const tempAuthId = `prov-demo-user-${Date.now()}`;
   const tempPassword = "prov-demo-pass";
   step("17) provisionalLogin (temp user)");
 　　　　　　　　　　　　　　　　　  const provisional = await revlm.provisionalLogin(process.env.PROVISIONAL_AUTH_ID || "example-prov");

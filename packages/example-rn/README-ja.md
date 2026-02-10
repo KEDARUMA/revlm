@@ -9,8 +9,21 @@
 - `pnpm --filter @kedaruma/example-rn start`: Metro を起動します。
 - `pnpm --filter @kedaruma/example-rn ios`: iOS で起動します。
 - `pnpm --filter @kedaruma/example-rn android`: Android で起動します。
+- `pnpm --filter @kedaruma/example-rn android:https:prep`: adb reverse の正規化 + Android証明書導入フローを実行します。
+- `pnpm --filter @kedaruma/example-rn android:https`: 上記 prep の後に Android を起動します。
 - `pnpm --filter @kedaruma/example-rn trust:ios-cert`: 起動中iOSシミュレータへ証明書を信頼登録します。
 - `pnpm --filter @kedaruma/example-rn trust:android-cert`: Androidエミュレータへ証明書を送信してインストールします。
+
+## Android 起動方法の変更
+HTTPS デモの再現性を上げるため、Android の起動は `android` ではなく `android:https` を標準手順に変更しました。
+
+- 以前: `pnpm --filter @kedaruma/example-rn android`
+- 現在: `pnpm --filter @kedaruma/example-rn android:https`
+
+`android:https` は以下をまとめて実行します。
+- `adb reverse` の初期化と再設定（8081/4123）
+- Android 証明書導入フロー（`trust:android-cert` 相当）
+- `react-native run-android`
 
 ## Environment files
 
@@ -45,6 +58,42 @@ Android:
 
 ```
 pnpm --filter @kedaruma/example-rn android
+```
+
+### Android HTTPS の再現手順（推奨）
+初回セットアップ時や、環境差分でログインが不安定になった時はこの手順を使ってください。
+
+ターミナル1（server）:
+```
+pnpm --filter @kedaruma/example-server demo
+```
+
+ターミナル2（Metro）:
+```
+pnpm --filter @kedaruma/example-rn start -- --reset-cache
+```
+
+ターミナル3（Android起動 + adb reverse + 証明書導入フロー）:
+```
+pnpm --filter @kedaruma/example-rn android:https
+```
+
+### 2回目以降の通常起動
+以下を実行してください。
+
+ターミナル1（server）:
+```
+pnpm --filter @kedaruma/example-server demo
+```
+
+ターミナル2（Metro）:
+```
+pnpm --filter @kedaruma/example-rn start
+```
+
+ターミナル3（Android）:
+```
+pnpm --filter @kedaruma/example-rn android:https
 ```
 
 ## RN polyfills（重要）

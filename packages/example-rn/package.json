@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "android": "react-native run-android",
+    "android:https:prep": "node scripts/prepare-android-https.js",
+    "android:https": "pnpm run android:https:prep && react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
@@ -28,7 +30,9 @@
     "@react-native-community/cli-platform-android": "20.0.0",
     "@react-native-community/cli-platform-ios": "20.0.0",
     "@react-native/babel-preset": "0.83.1",
+    "@react-native/codegen": "0.83.1",
     "@react-native/eslint-config": "0.83.1",
+    "@react-native/gradle-plugin": "0.83.1",
     "@react-native/metro-config": "0.83.1",
     "@react-native/typescript-config": "0.83.1",
     "@types/jest": "^29.5.13",

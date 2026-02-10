@@ -9,6 +9,7 @@ import {
   RN_REVLM_SESSION_ID,
   USERS_DB_NAME,
 } from '@env';
+import { Platform } from 'react-native';
 
 type EnvConfig = {
   baseUrl: string;
@@ -21,6 +22,14 @@ type EnvConfig = {
   autoRefreshOn401: boolean;
   logLevel: string;
 };
+
+function resolveBaseUrlForRuntime(baseUrl: string): string {
+  if (Platform.OS !== 'android') return baseUrl;
+  return baseUrl.replace(
+    /^(http:\/\/)(localhost|127\.0\.0\.1)([:/]|$)/i,
+    '$110.0.2.2$3'
+  );
+}
 
 export function getEnv(): EnvConfig {
   const missing: string[] = [];
@@ -63,7 +72,7 @@ export function getEnv(): EnvConfig {
   };
 
   return {
-    baseUrl,
+    baseUrl: resolveBaseUrlForRuntime(baseUrl),
     usersDbName,
     sessionId,
     provisionalLoginEnabled: parseBool(provisionalLoginEnabledRaw, 'PROVISIONAL_LOGIN_ENABLED'),

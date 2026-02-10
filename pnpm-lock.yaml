@@ -136,9 +136,15 @@ importers:
       '@react-native/babel-preset':
         specifier: 0.83.1
         version: 0.83.1(@babel/core@7.28.4)
+      '@react-native/codegen':
+        specifier: 0.83.1
+        version: 0.83.1(@babel/core@7.28.4)
       '@react-native/eslint-config':
         specifier: 0.83.1
         version: 0.83.1(eslint@8.57.1)(jest@29.7.0(@types/node@24.9.1)(ts-node@10.9.2(@types/node@24.9.1)(typescript@5.9.3)))(prettier@2.8.8)(typescript@5.9.3)
+      '@react-native/gradle-plugin':
+        specifier: 0.83.1
+        version: 0.83.1
       '@react-native/metro-config':
         specifier: 0.83.1
         version: 0.83.1(@babel/core@7.28.4)
@@ -177,7 +183,7 @@ importers:
     dependencies:
       '@kedaruma/revlm-server':
         specifier: latest
-        version: 1.0.61(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
+        version: 1.0.62(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)
       '@kedaruma/revlm-shared':
         specifier: latest
         version: 1.0.12
@@ -1566,8 +1572,8 @@ packages:
   '@kedaruma/revlm-client@1.0.62':
     resolution: {integrity: sha512-2ud2fWQpEN31QtNomV5DQybjcM/lI4RvRLtGVFII9+16+KMuud8tAm9cewyWnhrX11XJhcxre7z0JU6ppgPFbQ==}
 
-  '@kedaruma/revlm-server@1.0.61':
-    resolution: {integrity: sha512-v9whF7RZQsDw+Dvi34qqfQTweuY3lGCACREE8VRtEVNgwEKrEhJARGIHxhMb6YAXdTiFsfctWr9q5hzBSjMX0g==}
+  '@kedaruma/revlm-server@1.0.62':
+    resolution: {integrity: sha512-dIl7cISlnV8CNxPmKdg2UwKY6xGLcQBQTbP1fNRVqyzlWfVowaDB5DQBgjC9juzl5Zd5LISPtIFMwR2ZNgkjSg==}
 
   '@kedaruma/revlm-shared@1.0.12':
     resolution: {integrity: sha512-6gZ+uPa/7iGi4QRmper2FjyW0rQwVluUSzOa38Aqkuw5igpWQ0Vdh+q1gXK3tMWsAaRNzyLIuzv7o/PIDCdrPQ==}
@@ -7976,7 +7982,7 @@ snapshots:
       bson: 6.10.4
       dotenv: 17.2.3
 
-  '@kedaruma/revlm-server@1.0.61(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
+  '@kedaruma/revlm-server@1.0.62(@aws-sdk/credential-providers@3.916.0)(socks@2.8.7)':
     dependencies:
       '@kedaruma/revlm-shared': 1.0.12
       bcrypt: 6.0.0
