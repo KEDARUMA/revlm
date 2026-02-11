@@ -14,6 +14,21 @@ revlm-server と revlm-client が共用する TypeScript 型定義、BSON ヘル
 
 `AuthClient` は `randomBytes` を外部注入できます。プラットフォームの乱数源を明示的に指定してください。
 
+`randomBytes` を `AuthClient` に渡さない場合、内部では `getRandomBytes()` が使われます。
+この実装は `initRandomBytes()` で差し替えできます。
+
+### 推奨: 起動時に初期化
+
+アプリ起動時に一度だけ、暗号学的に安全な乱数源で `initRandomBytes()` を設定することを推奨します。  
+内蔵フォールバック乱数は互換性用であり、本番のセキュリティ用途には非推奨です。
+
+```ts
+import { initRandomBytes } from '@kedaruma/revlm-shared/random-bytes';
+import { randomBytes as nodeRandomBytes } from 'crypto';
+
+initRandomBytes((length) => new Uint8Array(nodeRandomBytes(length)));
+```
+
 ## プラットフォーム別必須モジュール
 
 `randomBytes` を指定しない場合、以下の乱数源が必要です。

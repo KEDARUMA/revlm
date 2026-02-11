@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "demo": "vite",
-    "test": "echo \"example-vue: no tests (browser-based checks only)\""
+    "test": "echo \"example-vue: no tests (browser-based checks only)\"",
+    "clean": "rm -rf node_modules dist .vite .turbo .cache coverage .eslintcache"
   },
   "dependencies": {
     "@kedaruma/revlm-client": "latest",

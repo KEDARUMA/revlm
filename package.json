@@ -7,7 +7,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "clean": "pnpm -r run clean && rm -rf dist node_modules",
+    "clean": "pnpm -r --if-present run clean && rm -rf node_modules .turbo .cache",
     "test": "pnpm -r --workspace-concurrency=1 --filter \"!@kedaruma/example-*\" test",
     "test:npm": "pnpm --filter @kedaruma/example-cli test && pnpm --filter @kedaruma/example-vue test",
     "test:demo": "pnpm --filter @kedaruma/example-cli test && pnpm --filter @kedaruma/example-vue test",

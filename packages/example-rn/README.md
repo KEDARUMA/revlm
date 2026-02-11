@@ -13,6 +13,7 @@ This package provides the React Native demo client for the Revlm server.
 - `pnpm --filter @kedaruma/example-rn android:https`: run prep, then run Android app.
 - `pnpm --filter @kedaruma/example-rn trust:ios-cert`: trust mkcert root CA in booted iOS simulators.
 - `pnpm --filter @kedaruma/example-rn trust:android-cert`: push and install cert on Android emulators.
+- `pnpm --filter @kedaruma/example-rn clean`: remove RN temporary artifacts (Android/iOS build files, Pods, Metro/haste cache, DerivedData) while keeping certificate files.
 
 ## Android startup change
 To improve HTTPS reproducibility, Android startup is now standardized on `android:https` instead of `android`.

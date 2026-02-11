@@ -8,8 +8,9 @@ Realm SDK からの移植を意識し、MongoDB 操作を近い書き味で提�
 ## 対象環境
 
 - ブラウザ / Node.js / React Native
-- ブラウザは Cookie を自動管理します
-- Node/RN は `cookieStore` を用意して Cookie を受け取り/送信してください
+- `fetchImpl` は省略可能で、未指定時は `globalThis.fetch` を自動利用します
+- Node.js は v18+ なら組み込み `fetch` が使えます（それ未満は `fetchImpl` を明示指定）
+- `/cookie-check` で cookie モードを判定し、使えない場合はヘッダ refresh モードへ自動フォールバックします
 
 ## インストール
 
@@ -34,9 +35,11 @@ const revlm = new Revlm('https://localhost:4123', {
 #### RevlmOptions
 
 - `fetchImpl?: typeof fetch`  
-  独自 fetch を差し替える場合に指定
+  独自 fetch を差し替える場合に指定（任意）
 - `defaultHeaders?: Record<string, string>`  
   すべてのリクエストに追加するヘッダ
+- `stateStore?: RevlmStateStore`  
+  ヘッダ refresh モードで使う refresh secret の永続化ストア（任意）
 - `provisionalEnabled?: boolean`  
   仮ログイン機能の有効化
 - `provisionalAuthSecretMaster?: string`  
@@ -53,20 +56,25 @@ const revlm = new Revlm('https://localhost:4123', {
   送信ヘッダ `x-revlm-session-id` の固定値
 - `sessionIdProvider?: () => string | Promise<string>`  
   動的な sessionId 供給
-- `cookieStore?: CookieStore`  
-  Node/RN での Cookie 受け取り/送信を行うストア
 
-#### CookieStore
+#### RevlmStateStore
 
 ```ts
-export type CookieStore = {
-  getCookieHeader: (url: string) => string | undefined | Promise<string | undefined>;
-  setCookie: (url: string, setCookieHeader: string) => void | Promise<void>;
+export type RevlmStateStore = {
+  get: (key: string) => Promise<string | undefined>;
+  set: (key: string, value: string) => Promise<void>;
+  remove: (key: string) => Promise<void>;
 };
 ```
 
-Node/RN では `/cookie-check` を通すために `cookieStore` が必要です。  
-refresh をヘッダ方式にする場合でも、最低限 `/cookie-check` に対応してください。
+`stateStore` は任意ですが、Node/RN でヘッダ refresh フォールバックを使う場合は推奨です。  
+未指定の場合はプロセス寿命のメモリ内だけで refresh secret を保持します。
+
+#### 乱数に関する注意（provisional login）
+
+`provisionalLogin()` は `@kedaruma/revlm-shared` の `AuthClient` を使います。  
+セキュリティ面を重視する場合は、アプリ起動時に `initRandomBytes()` を暗号学的に安全な乱数源で初期化してください。  
+shared 側のフォールバック乱数は互換性用であり、本番のセキュリティ用途には非推奨です。
 
 #### メソッド
 

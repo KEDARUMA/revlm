@@ -8,8 +8,9 @@ The API is intentionally close to Realm SDK to make migration straightforward.
 ## Supported Environments
 
 - Browser / Node.js / React Native
-- Browsers manage cookies automatically
-- Node/RN must provide `cookieStore` to receive/send cookies
+- `fetchImpl` is optional. If omitted, `globalThis.fetch` is used automatically
+- Node.js requires v18+ for built-in `fetch` (or provide `fetchImpl` manually)
+- Cookie mode is probed with `/cookie-check`; if unavailable, refresh falls back to header mode
 
 ## Install
 
@@ -34,9 +35,11 @@ const revlm = new Revlm('https://localhost:4123', {
 #### RevlmOptions
 
 - `fetchImpl?: typeof fetch`  
-  Override fetch implementation
+  Optional override for fetch implementation
 - `defaultHeaders?: Record<string, string>`  
   Headers added to every request
+- `stateStore?: RevlmStateStore`  
+  Optional persistence for refresh secret used in header refresh mode
 - `provisionalEnabled?: boolean`  
   Enable provisional login flow
 - `provisionalAuthSecretMaster?: string`  
@@ -53,20 +56,25 @@ const revlm = new Revlm('https://localhost:4123', {
   Fixed `x-revlm-session-id`
 - `sessionIdProvider?: () => string | Promise<string>`  
   Dynamic session id provider
-- `cookieStore?: CookieStore`  
-  Required for Node/RN cookie handling
 
-#### CookieStore
+#### RevlmStateStore
 
 ```ts
-export type CookieStore = {
-  getCookieHeader: (url: string) => string | undefined | Promise<string | undefined>;
-  setCookie: (url: string, setCookieHeader: string) => void | Promise<void>;
+export type RevlmStateStore = {
+  get: (key: string) => Promise<string | undefined>;
+  set: (key: string, value: string) => Promise<void>;
+  remove: (key: string) => Promise<void>;
 };
 ```
 
-Node/RN must support `/cookie-check` via `cookieStore`.  
-Even with header-based refresh, you still need cookie-check support.
+`stateStore` is optional, but recommended in Node/RN when using header refresh fallback.  
+If not provided, in-memory refresh secret is used for the process lifetime only.
+
+#### Random source note (provisional login)
+
+`provisionalLogin()` depends on `AuthClient` from `@kedaruma/revlm-shared`.  
+For best security, initialize `initRandomBytes()` with a cryptographically secure RNG at app startup.
+The shared package fallback RNG is for compatibility, not recommended for production security-sensitive flows.
 
 #### Methods
 
@@ -146,4 +154,3 @@ await coll.deleteOne({ name: 'a' });
 
 `login`/`refreshToken` return `ok` in the response.  
 `MdbCollection` methods throw; check `err.response`.
-

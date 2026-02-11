@@ -13,6 +13,7 @@
 - `pnpm --filter @kedaruma/example-rn android:https`: 上記 prep の後に Android を起動します。
 - `pnpm --filter @kedaruma/example-rn trust:ios-cert`: 起動中iOSシミュレータへ証明書を信頼登録します。
 - `pnpm --filter @kedaruma/example-rn trust:android-cert`: Androidエミュレータへ証明書を送信してインストールします。
+- `pnpm --filter @kedaruma/example-rn clean`: RNの一時生成物（Android/iOS build, Pods, Metro/haste cache, DerivedData）を削除します（証明書ファイルは削除しません）。
 
 ## Android 起動方法の変更
 HTTPS デモの再現性を上げるため、Android の起動は `android` ではなく `android:https` を標準手順に変更しました。

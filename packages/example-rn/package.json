@@ -11,7 +11,8 @@
     "start": "react-native start",
     "test": "jest",
     "trust:ios-cert": "node scripts/trust-ios-simulator-cert.js",
-    "trust:android-cert": "node scripts/trust-android-emulator-cert.js"
+    "trust:android-cert": "node scripts/trust-android-emulator-cert.js",
+    "clean": "rm -rf node_modules .turbo .cache coverage .eslintcache android/.gradle android/build android/app/build android/app/.cxx android/.cxx ios/build ios/Pods && rm -rf \"${TMPDIR:-/tmp}\"/metro-* \"${TMPDIR:-/tmp}\"/haste-map-* \"${TMPDIR:-/tmp}\"/react-* && rm -rf \"$HOME\"/Library/Developer/Xcode/DerivedData/ExampleRn-*"
   },
   "dependencies": {
     "@kedaruma/revlm-client": "latest",

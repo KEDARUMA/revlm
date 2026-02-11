@@ -14,6 +14,21 @@ Shared TypeScript declarations, BSON helpers, and auth utilities consumed by bot
 
 `AuthClient` accepts `randomBytes` so you can plug in the platform RNG explicitly.
 
+`AuthClient` uses `getRandomBytes()` internally when `randomBytes` is not passed.
+That implementation is configurable via `initRandomBytes()`.
+
+### Recommended initialization
+
+Prefer initializing once at app startup with a cryptographically secure RNG.
+The built-in fallback RNG exists for compatibility, but it is not recommended for production security-sensitive flows.
+
+```ts
+import { initRandomBytes } from '@kedaruma/revlm-shared/random-bytes';
+import { randomBytes as nodeRandomBytes } from 'crypto';
+
+initRandomBytes((length) => new Uint8Array(nodeRandomBytes(length)));
+```
+
 ## Required modules by platform
 
 If you do not pass `randomBytes`, the following random sources are required:

@@ -10,7 +10,8 @@
     "stop": "tsx src/stop.ts",
     "setup-https": "tsx src/setup-https.ts",
     "reset-data": "tsx src/reset-data.ts",
-    "test": "node -e \"console.log('example-server: no unit tests (use root pnpm test for workspace tests, or pnpm test:npm for published npm integration).')\""
+    "test": "node -e \"console.log('example-server: no unit tests (use root pnpm test for workspace tests, or pnpm test:npm for published npm integration).')\"",
+    "clean": "rm -rf node_modules .turbo .cache coverage .eslintcache"
   },
   "dependencies": {
     "@kedaruma/revlm-server": "latest",
