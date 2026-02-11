@@ -247,8 +247,8 @@ importers:
   packages/revlm-client:
     dependencies:
       '@kedaruma/revlm-shared':
-        specifier: workspace:*
-        version: link:../revlm-shared
+        specifier: latest
+        version: 1.0.12
       bson:
         specifier: ^6.10.4
         version: 6.10.4
@@ -263,8 +263,8 @@ importers:
   packages/revlm-server:
     dependencies:
       '@kedaruma/revlm-shared':
-        specifier: workspace:*
-        version: link:../revlm-shared
+        specifier: latest
+        version: 1.0.12
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0
