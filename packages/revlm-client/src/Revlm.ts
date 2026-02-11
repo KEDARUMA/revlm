@@ -1,5 +1,6 @@
 import { EJSON } from 'bson';
 import { AuthClient } from '@kedaruma/revlm-shared';
+import { initRandomBytes, type RandomBytesFn } from '@kedaruma/revlm-shared/random-bytes';
 import type { DefaultId } from '@kedaruma/revlm-shared/models/mongo-doc-base-types';
 import RevlmDBDatabase from "./RevlmDBDatabase";
 import { LoginResponse, ProvisionalLoginResponse, RegisterUserResponse, User } from './Revlm.types';
@@ -19,6 +20,37 @@ const SESSION_HEADER_NAME = 'x-revlm-session-id';
 const STATE_STORE_KEYS = {
   refreshSecret: 'refreshSecret',
 };
+let randomBytesInitAttempted = false;
+
+function resolvePlatformRandomBytes(): RandomBytesFn | undefined {
+  const cryptoLike = (globalThis as any)?.crypto;
+  if (cryptoLike && typeof cryptoLike.getRandomValues === 'function') {
+    return (length: number): Uint8Array => {
+      const out = new Uint8Array(length);
+      cryptoLike.getRandomValues(out);
+      return out;
+    };
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const nodeCrypto = require('crypto');
+    if (typeof nodeCrypto?.randomBytes === 'function') {
+      return (length: number): Uint8Array => new Uint8Array(nodeCrypto.randomBytes(length));
+    }
+  } catch {
+    // ignore: keep shared fallback RNG
+  }
+  return undefined;
+}
+
+function ensureRandomBytesInitialized(): void {
+  if (randomBytesInitAttempted) return;
+  randomBytesInitAttempted = true;
+  const platformRandomBytes = resolvePlatformRandomBytes();
+  if (platformRandomBytes) {
+    initRandomBytes(platformRandomBytes);
+  }
+}
 
 function normalizeLogLevel(value?: string): LogLevel {
   if (!value) return 'info';
@@ -135,6 +167,7 @@ export default class Revlm {
 
   constructor(baseUrl: string, opts: RevlmOptions = {}) {
     if (!baseUrl) throw new Error('baseUrl is required');
+    ensureRandomBytesInitialized();
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.fetchImpl = resolveFetchImpl(opts.fetchImpl);
     this.defaultHeaders = opts.defaultHeaders || {};
