@@ -43,3 +43,5 @@ jest-cache/
 # TypeScript incremental build info
 *.tsbuildinfo
 **/tsconfig.tsbuildinfo
+
+.codex-worklog.md
