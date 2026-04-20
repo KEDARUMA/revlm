@@ -62,3 +62,12 @@ For the React Native demo, Xcode and Android Studio must be installed in advance
   - Vue login/CRUD/refresh demo in the browser.
 - [example-rn](packages/example-rn/README.md)
   - React Native login/CRUD/refresh demo (local HTTPS required).
+
+## Server Body Size Settings
+
+The Revlm server supports two optional environment variables for request body sizing, both of which can be set in a `.env` file.
+
+- `BODY_LIMIT` limits accepted `application/ejson` and JSON request bodies. If omitted, it defaults to `1mb`.
+- `BODY_WARN_THRESHOLD` only emits a warning log when the request body exceeds the threshold. If omitted, it defaults to `100kb`.
+
+See [packages/revlm-server/README.md](packages/revlm-server/README.md) and [packages/example-server/README.md](packages/example-server/README.md) for concrete configuration examples.

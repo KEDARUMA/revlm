@@ -62,3 +62,12 @@ const docs = await coll.find({});<br>
   - Vue でログイン/CRUD/refresh を確認します（ブラウザ動作）。
 - [example-rn](packages/example-rn/README-ja.md)
   - React Native でログイン/CRUD/refresh を確認します（ローカル HTTPS 前提）。
+
+## サーバーの body サイズ設定
+
+Revlm サーバーでは、リクエスト本体のサイズ制御に関する任意の環境変数を 2 つ利用できます。どちらも `.env` で指定可能です。
+
+- `BODY_LIMIT` は `application/ejson` と JSON のリクエスト本体の受け入れ上限です。未指定時は `1mb` です。
+- `BODY_WARN_THRESHOLD` は、そのサイズを超えたリクエスト本体に対して警告ログを出すだけのしきい値です。未指定時は `100kb` です。
+
+具体的な設定例は [packages/revlm-server/README-ja.md](packages/revlm-server/README-ja.md) と [packages/example-server/README-ja.md](packages/example-server/README-ja.md) を参照してください。

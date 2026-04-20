@@ -20,6 +20,9 @@ Set the following environment variables or values in a `.env` file before starti
 - `JWT_SECRET` / `jwtSecret`
 - `REFRESH_SECRET_SIGNING_KEY` / `refreshSecretSigningKey` (HMAC key for 5-minute refresh secret cookie rotation)
 - Optional provisional auth settings (`provisionalLoginEnabled`, `provisionalAuthId`, etc.)
+- Optional request body settings:
+  - `BODY_LIMIT` limits accepted `application/ejson` and JSON request bodies. If omitted, it defaults to `1mb`.
+  - `BODY_WARN_THRESHOLD` emits a warning log when the request body exceeds the threshold. If omitted, it defaults to `100kb`.
 
 ## Scripts
 

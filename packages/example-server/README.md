@@ -144,7 +144,9 @@ REFRESH_WINDOW_SEC=300
 # 0 means unlimited
 REFRESH_SECRET_TTL_SEC=300
 
-# Request body limit
+# Request body limit for accepted `application/ejson` and JSON request bodies
+# Can be set via `.env`
+# Defaults to `1mb` when omitted
 BODY_LIMIT=1mb
 
 # Stored session lifetime (seconds)
@@ -152,6 +154,8 @@ BODY_LIMIT=1mb
 REFRESH_SESSION_TTL_SEC=2592000
 
 # Warn when request body exceeds this threshold
+# Can be set via `.env`
+# Defaults to `100kb` when omitted
 BODY_WARN_THRESHOLD=100kb
 
 # Log level (debug / info / warn / error)

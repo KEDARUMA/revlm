@@ -151,8 +151,10 @@ REFRESH_SECRET_TTL_SEC=300
 # REFRESH_SECRET_TTL_SEC=0、REFRESH_WINDOW_SEC=0 とし、Revlm-Client の autoRefreshOn401=true を設定することで、
 # アクセストークンの有効期限を意識せずに運用できます。スマートフォンアプリなどで有効です。
 
-# リクエスト本体（body）の最大サイズ
+# `application/ejson` と JSON のリクエスト本体の最大サイズ
+# `.env` で指定可能
 # これを超えると PayloadTooLargeError が発生する
+# 未指定時は `1mb`
 BODY_LIMIT=1mb
 
 # 保存されたセッション情報の有効期間（秒）
@@ -160,6 +162,8 @@ BODY_LIMIT=1mb
 REFRESH_SESSION_TTL_SEC=2592000
 
 # リクエスト本体がこのしきい値を超えると、警告ログ（WARN）を出す
+# `.env` で指定可能
+# 未指定時は `100kb`
 BODY_WARN_THRESHOLD=100kb
 
 # ログレベルの指定（debug / info / warn / error）

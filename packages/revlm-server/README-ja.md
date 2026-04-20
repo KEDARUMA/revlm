@@ -20,6 +20,9 @@ pnpm start   # dist/start.js を起動
 - `JWT_SECRET` / `jwtSecret`
 - `REFRESH_SECRET_SIGNING_KEY` / `refreshSecretSigningKey`（5分TTLのリフレッシュ用シークレットを署名するHMAC鍵）
 - 仮ログイン関連 (`provisionalLoginEnabled`, `provisionalAuthId` など)
+- 任意のリクエスト body 関連設定:
+  - `BODY_LIMIT` は `application/ejson` と JSON のリクエスト本体の受け入れ上限です。未指定時は `1mb` です。
+  - `BODY_WARN_THRESHOLD` は、そのサイズを超えたリクエスト本体に対して警告ログを出すしきい値です。未指定時は `100kb` です。
 
 ## スクリプト
 
