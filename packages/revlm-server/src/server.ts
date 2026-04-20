@@ -51,27 +51,34 @@ const parseSizeToBytes = (raw: string | undefined): number | undefined => {
   const multipliers: Record<string, number> = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3 };
   return Math.floor(value * (multipliers[unit] ?? 1));
 };
-const BODY_LIMIT_RAW = process.env.BODY_LIMIT;
-const BODY_WARN_THRESHOLD_RAW = process.env.BODY_WARN_THRESHOLD;
-const BODY_LIMIT = BODY_LIMIT_RAW ?? '1mb';
-const BODY_WARN_THRESHOLD = parseSizeToBytes(BODY_WARN_THRESHOLD_RAW ?? '100kb') ?? 100 * 1024;
+const resolveBodyLimit = (): string => {
+  const raw = process.env.BODY_LIMIT;
+  if (raw === undefined || raw.trim() === '') return '1mb';
+  return raw;
+};
+const resolveBodyWarnThreshold = (): number => parseSizeToBytes(process.env.BODY_WARN_THRESHOLD ?? '100kb') ?? 100 * 1024;
 app.use((req: Request, _res: Response, next: NextFunction) => {
   const contentLengthHeader = req.headers['content-length'];
   const contentLength = typeof contentLengthHeader === 'string' ? Number(contentLengthHeader) : undefined;
-  if (contentLength && contentLength > BODY_WARN_THRESHOLD) {
+  const bodyWarnThreshold = resolveBodyWarnThreshold();
+  if (contentLength && contentLength > bodyWarnThreshold) {
     const isGate = (req.originalUrl || req.url || '').includes('/revlm-gate');
     if (!isGate) {
       console.warn('[body-size warning]', {
         url: req.originalUrl || req.url,
         contentLength,
-        threshold: BODY_WARN_THRESHOLD,
+        threshold: bodyWarnThreshold,
       });
     }
   }
   next();
 });
-app.use(express.text({ type: 'application/ejson', verify: captureRaw, limit: BODY_LIMIT }));
-app.use(express.json({ verify: captureRaw, limit: BODY_LIMIT }));
+app.use((req: Request, res: Response, next: NextFunction) => {
+  express.text({ type: 'application/ejson', verify: captureRaw, limit: resolveBodyLimit() })(req, res, next);
+});
+app.use((req: Request, res: Response, next: NextFunction) => {
+  express.json({ verify: captureRaw, limit: resolveBodyLimit() })(req, res, next);
+});
 
 export let client: MongoClientType | undefined;
 
