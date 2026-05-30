@@ -1,16 +1,48 @@
-# Revlm Monorepo
+# Revlm
 
 English documentation | [日本語ドキュメントはこちら](README-ja.md)  
 
-Self-hosted alternative to MongoDB Realm App Services. This monorepo contains:
+Self-hosted replacement for MongoDB Realm App Services.
+
+Revlm connects web, mobile, and React Native apps to MongoDB through a TypeScript gateway with authentication, JWT sessions, refresh tokens, and a Realm-like client API. It is designed for teams and indie developers who need to migrate away from MongoDB Realm / Atlas App Services while keeping application-side changes small.
+
+## Why Revlm?
+
+- Replace MongoDB Realm App Services with a self-hosted TypeScript server.
+- Keep a Realm-like client API for easier migration.
+- Use MongoDB from web and mobile apps through an authenticated gateway.
+- Support password authentication, provisional login, JWT, and refresh token flows.
+- Run on your own infrastructure instead of depending on a hosted app-service layer.
+
+## Production Use Case
+
+Revlm is used in production by [Fukkarubaito](https://apps.apple.com/jp/app/%E3%83%95%E3%83%83%E3%82%AB%E3%83%AB%E3%83%90%E3%82%A4%E3%83%88/id6748752464), a Japanese part-time job search app that maps and notifies users about job listings across Japan.
+
+- Searches roughly 250,000 part-time job listings by user-selected conditions.
+- Stores job data in MongoDB using a 3-shard sharded cluster.
+- Runs real-time searches and maps matching listings as markers.
+- Sends notifications based on user-selected job conditions.
+- Available on [iOS](https://apps.apple.com/jp/app/%E3%83%95%E3%83%83%E3%82%AB%E3%83%AB%E3%83%90%E3%82%A4%E3%83%88/id6748752464) and [Android](https://play.google.com/store/apps/details?id=jp.co.umore.app.footlight&hl=ja).
+
+## Who Is This For?
+
+Revlm is useful if you:
+
+- previously used MongoDB Realm Web SDK or Atlas App Services;
+- want to keep MongoDB behind your own API server;
+- need authentication and refresh-token handling around MongoDB access;
+- are building a TypeScript, React Native, Vue, or CLI app backed by MongoDB;
+- want a small self-hosted alternative instead of a large backend framework.
+
+## Packages
+
+This monorepo contains:
 
 - `@kedaruma/revlm-server` – Express-based gateway that manages authentication and proxies MongoDB actions
 - `@kedaruma/revlm-client` – TypeScript SDK for apps migrating from Realm to the Revlm server
 - `@kedaruma/revlm-shared` – Shared types, auth helpers, and utilities
 
-## Background
-
-This project provides a drop-in, self-hosted replacement for MongoDB Realm App Services. It supports password authentication and provisional login, and offers a Realm-compatible API to minimize migration effort.
+## Realm Migration Example
 
 <table>
   <thead>
