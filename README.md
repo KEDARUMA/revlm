@@ -1,12 +1,57 @@
+<p align="center">
+  <img src="docs/logo.png" alt="Revlm logo" width="320">
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@kedaruma/revlm-server"><img src="https://img.shields.io/npm/v/@kedaruma/revlm-server?label=server" alt="server npm version"></a>
+  <a href="https://www.npmjs.com/package/@kedaruma/revlm-client"><img src="https://img.shields.io/npm/v/@kedaruma/revlm-client?label=client" alt="client npm version"></a>
+  <a href="https://www.npmjs.com/package/@kedaruma/revlm-shared"><img src="https://img.shields.io/npm/v/@kedaruma/revlm-shared?label=shared" alt="shared npm version"></a>
+  <a href="https://github.com/kedaruma/revlm/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-ISC-blue" alt="license"></a>
+  <img src="https://img.shields.io/badge/TypeScript-Ready-3178c6" alt="TypeScript ready">
+</p>
+
 # Revlm
 
 English documentation | [日本語ドキュメントはこちら](README-ja.md)  
 
-Self-hosted replacement for MongoDB Realm App Services.
+A self-hosted TypeScript gateway for MongoDB apps migrating from Realm App Services.
 
-Revlm connects web, mobile, and React Native apps to MongoDB through a TypeScript gateway with authentication, JWT sessions, refresh tokens, and a Realm-like client API. It is designed for teams and indie developers who need to migrate away from MongoDB Realm / Atlas App Services while keeping application-side changes small.
+Revlm gives web, mobile, and React Native apps a Realm-like client API backed by your own MongoDB and server infrastructure. It handles password authentication, provisional login, JWT sessions, refresh tokens, and authenticated MongoDB CRUD calls through a small Express gateway.
 
-## Why Revlm?
+## Quick Start
+
+Install the client SDK in your app:
+
+```bash
+pnpm add @kedaruma/revlm-client
+```
+
+Use the Realm-compatible client surface:
+
+```ts
+import { Revlm } from '@kedaruma/revlm-client/revlm-compat';
+
+const revlm = new Revlm('https://your-server.example.com', {
+  sessionId: 'your-session-id',
+});
+
+await revlm.login('user@example.com', 'password');
+
+const users = revlm.db('app').collection('users');
+const docs = await users.find({});
+```
+
+To try the repository locally with the example server and in-memory MongoDB:
+
+```bash
+pnpm install
+pnpm run build:packages
+pnpm --filter @kedaruma/example-cli test
+```
+
+For browser and React Native demos, see the package README files under [`packages/`](packages).
+
+## What Revlm Provides
 
 - Replace MongoDB Realm App Services with a self-hosted TypeScript server.
 - Keep a Realm-like client API for easier migration.
@@ -14,7 +59,18 @@ Revlm connects web, mobile, and React Native apps to MongoDB through a TypeScrip
 - Support password authentication, provisional login, JWT, and refresh token flows.
 - Run on your own infrastructure instead of depending on a hosted app-service layer.
 
-## Production Use Case
+## Scope and Compatibility
+
+Revlm is focused on the parts of Realm App Services that are commonly needed when moving application traffic back to your own infrastructure:
+
+- Realm-style login and session handling
+- authenticated collection access from TypeScript, browser, and React Native clients
+- refresh-token based session continuity
+- local demos for CLI, Vue, and React Native clients
+
+Revlm is not a full clone of every Atlas App Services feature. Functions, triggers, sync, hosting, and other managed App Services features should be replaced with your own backend code or infrastructure.
+
+## Used in Production
 
 Revlm is used in production by [Fukkarubaito](https://apps.apple.com/jp/app/%E3%83%95%E3%83%83%E3%82%AB%E3%83%AB%E3%83%90%E3%82%A4%E3%83%88/id6748752464), a Japanese part-time job search app that maps and notifies users about job listings across Japan.
 
